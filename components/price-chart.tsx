@@ -34,13 +34,13 @@ const COLORS = [
 export function PriceChart({ chart }: { chart: ChartData }) {
   if (!chart?.data || chart.data.length === 0) {
     return (
-      <div className="p-4 text-center text-gray-400 text-sm">暂无图表数据</div>
+      <div className="p-4 text-center text-muted-foreground text-sm">暂无图表数据</div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
-      <h4 className="text-sm font-semibold text-gray-700 mb-3">
+    <div className="rounded-xl border bg-card p-4">
+      <h4 className="text-sm font-semibold text-card-foreground mb-3">
         📊 {chart.title}
       </h4>
       <div className="w-full h-64">

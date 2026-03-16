@@ -26,10 +26,19 @@ export interface DealRow {
   created_at: string | null;
   updated_at: string | null;
   price_per_night: number | null;
+  price_baseline: number | null;
   deal_score: number | null;
+  // price tracking fields
+  price_lowest: number | null;
+  price_highest: number | null;
+  price_change_count: number | null;
+  price_trend: string | null; // 'up' | 'down' | 'stable' | 'new'
+  first_seen_at: string | null;
+  tracking_since: string | null;
   // joined
   brand_name?: string;
   brand_name_cn?: string;
+  brand_tier?: string;
 }
 
 export interface BrandRow {
@@ -62,6 +71,18 @@ export interface BrandSummary {
   avg_price: number | null;
   max_price: number | null;
   currency: string | null;
+  tier: string | null;
+}
+
+export interface ActiveBrandInfo {
+  id: string;
+  name: string;
+  name_cn: string | null;
+  tier: string;
+  currency: string;
+  deal_count: number;
+  scored_count: number;
+  cabin_types: string;
 }
 
 export interface DestinationSummary {
@@ -81,7 +102,41 @@ export interface SearchFilters {
   durationMin?: number;
   durationMax?: number;
   cabinType?: string;
-  sortBy?: 'price' | 'sail_date' | 'duration_days' | 'deal_score';
+  priceTrend?: string; // 'up' | 'down' | 'stable' | 'new'
+  tier?: string | string[]; // 'budget' | 'standard' | 'premium' | 'luxury' (或数组)
+  minScore?: number;
+  sortBy?: 'price' | 'sail_date' | 'duration_days' | 'deal_score' | 'price_change_count';
   sortOrder?: 'asc' | 'desc';
   limit?: number;
+}
+
+export interface TrackingStats {
+  tracked_deals: number;
+  total_snapshots: number;
+  changed_deals: number;
+  trends: Record<string, number>;
+  top_drops: TopDrop[];
+}
+
+export interface TopDrop {
+  id: string;
+  brand_id: string;
+  deal_name: string;
+  ship_name: string | null;
+  destination: string | null;
+  price: number;
+  price_currency: string;
+  price_highest: number;
+  price_lowest: number;
+  drop_pct: number;
+  deal_score: number | null;
+  cabin_type: string | null;
+  duration_days: number | null;
+  sail_date: string | null;
+  price_trend: string | null;
+  deal_url: string | null;
+  perks: string | null;
+  brand_name?: string;
+  brand_name_cn?: string;
+  brand_tier?: string;
 }

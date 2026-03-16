@@ -5,3 +5,8 @@ export { getPriceHistory } from './get-price-history';
 export { generateChart } from './generate-chart';
 export { compareCruises } from './compare-cruises';
 export { generateCopywriting } from './generate-copywriting';
+export { getTopPriceDrops } from './get-top-drops';
+export { getHotDeals } from './get-hot-deals';
+export { getTrackingOverview } from './get-tracking-overview';
+export { listDestinations } from './list-destinations';
+export { listCabinTypes } from './list-cabin-types';

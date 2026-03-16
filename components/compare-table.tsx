@@ -59,24 +59,24 @@ export function CompareTable({ data }: { data: CompareData }) {
   const minPrice = Math.min(...data.deals.map((d) => d.price));
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto">
+    <div className="rounded-xl border bg-card overflow-x-auto">
       <div className="flex items-center gap-2 p-3 border-b">
-        <ArrowRightLeft className="w-4 h-4 text-blue-500" />
-        <span className="text-sm font-semibold text-gray-700">航线对比</span>
+        <ArrowRightLeft className="w-4 h-4 text-primary" />
+        <span className="text-sm font-semibold text-card-foreground">航线对比</span>
       </div>
       <table className="w-full text-sm">
         <thead>
-          <tr className="bg-gray-50">
-            <th className="text-left p-2 text-gray-500 font-medium w-24">
+          <tr className="bg-muted/50">
+            <th className="text-left p-2 text-muted-foreground font-medium w-24">
               项目
             </th>
             {data.deals.map((deal) => (
               <th
                 key={deal.id}
-                className="text-left p-2 text-gray-700 font-medium"
+                className="text-left p-2 text-card-foreground font-medium"
               >
                 <div className="flex items-center gap-1">
-                  <Ship className="w-3.5 h-3.5 text-blue-400" />
+                  <Ship className="w-3.5 h-3.5 text-primary" />
                   <span className="truncate max-w-[120px]">
                     {deal.dealName}
                   </span>
@@ -87,15 +87,15 @@ export function CompareTable({ data }: { data: CompareData }) {
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.key} className="border-t border-gray-100">
-              <td className="p-2 text-gray-500 font-medium">{row.label}</td>
+            <tr key={row.key} className="border-t">
+              <td className="p-2 text-muted-foreground font-medium">{row.label}</td>
               {data.deals.map((deal) => (
                 <td
                   key={deal.id}
                   className={
                     row.key === 'price' && deal.price === minPrice
-                      ? 'p-2 text-green-600 font-bold'
-                      : 'p-2 text-gray-700'
+                      ? 'p-2 text-green-600 dark:text-green-400 font-bold'
+                      : 'p-2 text-card-foreground'
                   }
                 >
                   {formatValue(deal, row.key)}

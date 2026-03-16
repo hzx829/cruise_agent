@@ -1,7 +1,7 @@
 import { streamText, stepCountIs, convertToModelMessages, type UIMessage } from 'ai';
 import { createZhipu } from 'zhipu-ai-provider';
 import { createOpenAI } from '@ai-sdk/openai';
-import { SYSTEM_PROMPT } from '@/lib/ai/prompts';
+import { buildSystemPrompt } from '@/lib/ai/prompts';
 import {
   searchDeals,
   getBrandOverview,
@@ -10,6 +10,11 @@ import {
   generateChart,
   compareCruises,
   generateCopywriting,
+  getTopPriceDrops,
+  getHotDeals,
+  getTrackingOverview,
+  listDestinations,
+  listCabinTypes,
 } from '@/lib/ai/tools';
 
 export const maxDuration = 60;
@@ -42,7 +47,7 @@ export async function POST(req: Request) {
 
   const result = streamText({
     model: getModel(),
-    system: SYSTEM_PROMPT,
+    system: buildSystemPrompt(),
     messages: await convertToModelMessages(messages),
     tools: {
       searchDeals,
@@ -52,6 +57,11 @@ export async function POST(req: Request) {
       generateChart,
       compareCruises,
       generateCopywriting,
+      getTopPriceDrops,
+      getHotDeals,
+      getTrackingOverview,
+      listDestinations,
+      listCabinTypes,
     },
     stopWhen: stepCountIs(5),
   });

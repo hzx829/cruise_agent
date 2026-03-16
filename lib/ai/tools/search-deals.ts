@@ -4,7 +4,7 @@ import * as queries from '@/lib/db/queries';
 
 export const searchDeals = tool({
   description:
-    '搜索邮轮特价航线。支持按品牌、目的地、价格范围、出发日期、航行天数、舱位类型等筛选。返回匹配的航线列表。',
+    '搜索邮轮特价航线。支持按品牌、目的地、价格范围、出发日期、航行天数、舱位类型、价格趋势、品牌层级等筛选。返回匹配的航线列表。',
   inputSchema: z.object({
     brand: z
       .string()
@@ -13,7 +13,7 @@ export const searchDeals = tool({
     destination: z
       .string()
       .optional()
-      .describe('目的地关键词，如 Caribbean, Alaska, Bahamas, 济州'),
+      .describe('目的地名称，如 Caribbean, Alaska, Hawaii'),
     priceMin: z.number().optional().describe('最低价格'),
     priceMax: z.number().optional().describe('最高价格'),
     sailDateFrom: z
@@ -30,8 +30,20 @@ export const searchDeals = tool({
       .string()
       .optional()
       .describe('舱位类型: interior, oceanview, balcony, suite'),
+    priceTrend: z
+      .enum(['up', 'down', 'stable', 'new'])
+      .optional()
+      .describe('价格趋势筛选: up(涨价) / down(降价) / stable(稳定) / new(新上架)'),
+    tier: z
+      .union([
+        z.enum(['budget', 'standard', 'premium', 'luxury']),
+        z.array(z.enum(['budget', 'standard', 'premium', 'luxury'])),
+      ])
+      .optional()
+      .describe('品牌层级，可传单个或数组: budget(大众) / standard(标准) / premium(高端) / luxury(奢华)'),
+    minScore: z.number().optional().describe('最低 deal_score 筛选'),
     sortBy: z
-      .enum(['price', 'sail_date', 'duration_days', 'deal_score'])
+      .enum(['price', 'sail_date', 'duration_days', 'deal_score', 'price_change_count'])
       .optional()
       .describe('排序字段，默认按价格'),
     sortOrder: z.enum(['asc', 'desc']).optional(),
@@ -48,6 +60,7 @@ export const searchDeals = tool({
         id: d.id,
         brand: d.brand_name_cn || d.brand_name || d.brand_id,
         brandId: d.brand_id,
+        brandTier: d.brand_tier,
         dealName: d.deal_name,
         shipName: d.ship_name,
         destination: d.destination,
@@ -55,6 +68,8 @@ export const searchDeals = tool({
         durationDays: d.duration_days,
         price: d.price,
         priceOriginal: d.price_original,
+        priceHighest: d.price_highest,
+        priceLowest: d.price_lowest,
         discountPct: d.discount_pct,
         currency: d.price_currency,
         cabinType: d.cabin_type,
@@ -62,6 +77,8 @@ export const searchDeals = tool({
         perks: d.perks ? JSON.parse(d.perks) : [],
         dealUrl: d.deal_url,
         dealScore: d.deal_score,
+        priceTrend: d.price_trend,
+        priceChangeCount: d.price_change_count,
       })),
     };
   },

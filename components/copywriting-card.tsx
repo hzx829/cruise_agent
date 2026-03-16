@@ -36,16 +36,16 @@ export function CopywritingCard({
   };
 
   return (
-    <div className="rounded-lg border border-purple-200 bg-purple-50/50 p-4">
+    <div className="rounded-xl border border-purple-200 bg-purple-50/50 p-4 dark:border-purple-800 dark:bg-purple-900/20">
       <div className="flex items-center gap-2 mb-2">
         <Sparkles className="w-4 h-4 text-purple-500" />
-        <span className="text-sm font-semibold text-purple-700">
+        <span className="text-sm font-semibold text-purple-700 dark:text-purple-300">
           小红书文案素材
         </span>
-        <span className="text-xs text-purple-400">{data.style}</span>
+        <span className="text-xs text-purple-400 dark:text-purple-500">{data.style}</span>
       </div>
 
-      <div className="text-xs text-gray-600 mb-2 space-y-0.5">
+      <div className="text-xs text-muted-foreground mb-2 space-y-0.5">
         <p>
           📍 {data.deal.brand} | {data.deal.destination} | {data.deal.duration}
         </p>
@@ -59,16 +59,16 @@ export function CopywritingCard({
         <div className="relative mt-3">
           <button
             onClick={handleCopy}
-            className="absolute top-2 right-2 p-1 rounded bg-white/80 hover:bg-white shadow-sm"
+            className="absolute top-2 right-2 p-1.5 rounded-lg bg-background/80 hover:bg-background shadow-sm transition-colors"
             title="复制文案"
           >
             {copied ? (
               <Check className="w-3.5 h-3.5 text-green-500" />
             ) : (
-              <Copy className="w-3.5 h-3.5 text-gray-400" />
+              <Copy className="w-3.5 h-3.5 text-muted-foreground" />
             )}
           </button>
-          <div className="bg-white rounded p-3 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+          <div className="rounded-lg bg-card p-3 text-sm text-card-foreground whitespace-pre-wrap leading-relaxed">
             {generatedText}
           </div>
         </div>
