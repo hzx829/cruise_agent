@@ -170,8 +170,70 @@ npm run dev
 
 ## Phase 4: 待开始
 
-- [ ] 消息持久化 (SQLite / localStorage)
 - [ ] 文案生成用 Claude 模型 (prepareStep 切换)
 - [ ] 数据导出 (Excel/PDF)
 - [ ] 海报生成
-- [ ] 多轮对话记忆优化
+
+---
+
+## Phase 5: PC 端 UI + 聊天历史 + 主动通知 ✅
+
+详见 [phase5-upgrade.md](phase5-upgrade.md)
+
+#### 数据层 — agent.db (可写 SQLite)
+
+- [lib/db/agent-db.ts](lib/db/agent-db.ts) — 独立写库连接 (WAL + 外键)，自动建表 (chats/messages/notifications/notification_config)
+- [lib/db/chat-store.ts](lib/db/chat-store.ts) — 聊天 CRUD: createChat / loadChat / saveMessages / updateChatTitle / deleteChat / getChatList (游标分页)
+- [lib/db/notification-store.ts](lib/db/notification-store.ts) — 通知 CRUD: createNotification / getUnread / markRead / markAllRead / getConfig
+
+#### 路由重构 + 消息持久化
+
+- [app/page.tsx](app/page.tsx) — 根路径 redirect → `/chat`
+- [app/chat/page.tsx](app/chat/page.tsx) — `createChat()` → redirect `/chat/[id]`
+- [app/chat/[id]/page.tsx](app/chat/[id]/page.tsx) — `loadChat(id)` → `<Chat id initialMessages />`
+- [app/api/chat/route.ts](app/api/chat/route.ts) — 持久化改造：
+  - `prepareSendMessagesRequest` — 前端只发最后一条消息，服务端从 DB 加载历史
+  - `saveMessages` — 用户消息立即保存 + AI 回复 onFinish 保存
+  - `consumeStream` — 确保客户端断开也能完整保存
+  - `createIdGenerator` — 服务端生成消息 ID (msg-前缀)
+  - 首条消息自动提取标题 (前 50 字)
+- [app/api/history/route.ts](app/api/history/route.ts) — GET 聊天列表 (游标分页)
+- [app/api/chat/[id]/route.ts](app/api/chat/[id]/route.ts) — DELETE 删除聊天 (CASCADE 删消息)
+
+#### Sidebar 桌面端布局
+
+- [app/chat/layout.tsx](app/chat/layout.tsx) — `SidebarProvider` + `AppSidebar` + `SidebarInset`，cookie 持久化折叠状态
+- [components/app-sidebar.tsx](components/app-sidebar.tsx) — 品牌 header + 新建对话 + 聊天历史 + 通知铃铛 + 主题切换
+- [components/sidebar-history.tsx](components/sidebar-history.tsx) — SWR Infinite 分页 + 日期分组 (今天/昨天/最近7天/最近30天/更早) + 删除
+- [components/chat-header.tsx](components/chat-header.tsx) — SidebarToggle + 新建对话 (sidebar 收起时显示)
+- [components/sidebar-toggle.tsx](components/sidebar-toggle.tsx) — 带 Tooltip 的 sidebar 切换按钮
+- [components/theme-toggle.tsx](components/theme-toggle.tsx) — 主题切换 (SidebarMenuButton 形态)
+- [hooks/use-mobile.ts](hooks/use-mobile.ts) — `useIsMobile()` (768px 断点)
+- [components/chat.tsx](components/chat.tsx) — 重构：接收 `id` + `initialMessages` props，移除内置 header
+
+#### shadcn/ui 基础组件
+
+- [components/ui/sidebar.tsx](components/ui/sidebar.tsx) — 完整 Sidebar 组件系统
+- [components/ui/tooltip.tsx](components/ui/tooltip.tsx) — Radix Tooltip
+- [components/ui/sheet.tsx](components/ui/sheet.tsx) — Sheet (移动端抽屉)
+- [components/ui/separator.tsx](components/ui/separator.tsx) — Radix Separator
+- [components/ui/skeleton.tsx](components/ui/skeleton.tsx) — 骨架屏
+
+#### 通知系统
+
+- [app/api/notifications/route.ts](app/api/notifications/route.ts) — GET (未读/全部) + PATCH (标记已读)
+- [app/api/cron/check-prices/route.ts](app/api/cron/check-prices/route.ts) — Cron 端点：检查降价 > 阈值 → 创建通知
+- [components/notification-bell.tsx](components/notification-bell.tsx) — 铃铛 + Badge + Popover 通知面板 (30s SWR 轮询)
+
+#### CSS + 新增依赖
+
+- [app/globals.css](app/globals.css) — 新增 sidebar 色彩变量 (light/dark) + @theme 映射
+- `swr`, `date-fns`, `@radix-ui/react-{slot,tooltip,dialog,separator,dropdown-menu,popover}`
+
+### 架构决策
+
+- **独立 agent.db** — 与 cruise_deals.db 分离，保持爬虫数据只读
+- **游标分页** — `ending_before` 模式，适合实时数据
+- **只发最后一条** — `prepareSendMessagesRequest` 只传最新消息，服务端从 DB 补全
+- **Polling 通知** — 30s SWR 轮询，无需 SSE/WebSocket
+- **Cookie 侧边栏** — 折叠状态 cookie 持久化，SSR 可读取

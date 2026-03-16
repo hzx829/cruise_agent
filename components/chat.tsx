@@ -1,34 +1,22 @@
 'use client';
 
 import { useChat } from '@ai-sdk/react';
-import { DefaultChatTransport } from 'ai';
+import { DefaultChatTransport, generateId, type UIMessage } from 'ai';
 import {
   useState,
   useRef,
   useEffect,
   useCallback,
-  useSyncExternalStore,
   type KeyboardEvent,
 } from 'react';
-
-const emptySubscribe = () => () => {};
-function useHasMounted() {
-  return useSyncExternalStore(
-    emptySubscribe,
-    () => true,
-    () => false,
-  );
-}
 import {
   ArrowUp,
   Square,
   Ship,
-  Sun,
-  Moon,
   ArrowDown,
 } from 'lucide-react';
-import { useTheme } from 'next-themes';
 import { Message } from './message';
+import { ChatHeader } from './chat-header';
 
 const QUICK_ACTIONS = [
   { label: '🔥 最大降价', text: '帮我找降价幅度最大的邮轮航线，特别是高端和奢华品牌的' },
@@ -39,20 +27,44 @@ const QUICK_ACTIONS = [
   { label: '🇨🇳 皇家加勒比', text: '搜索皇家加勒比中国市场的航线，有哪些好价？' },
 ];
 
-export function Chat() {
+interface ChatProps {
+  id?: string;
+  initialMessages?: UIMessage[];
+}
+
+export function Chat({ id, initialMessages }: ChatProps) {
+  const [chatId] = useState(() => id ?? generateId());
+  const hasReplacedUrl = useRef(false);
+
   const { messages, sendMessage, status, stop } = useChat({
+    id: chatId,
+    messages: initialMessages,
     transport: new DefaultChatTransport({
       api: '/api/chat',
+      prepareSendMessagesRequest({ messages }) {
+        return {
+          body: {
+            message: messages[messages.length - 1],
+            id: chatId,
+          },
+        };
+      },
     }),
   });
+
+  // 首次发消息后更新 URL（streaming 时 DB 中已存在记录）
+  useEffect(() => {
+    if (!id && !hasReplacedUrl.current && messages.length > 0 && status === 'streaming') {
+      window.history.replaceState({}, '', `/chat/${chatId}`);
+      hasReplacedUrl.current = true;
+    }
+  }, [id, messages.length, status, chatId]);
 
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
-  const { resolvedTheme, setTheme } = useTheme();
-  const mounted = useHasMounted();
 
   const isLoading = status === 'streaming' || status === 'submitted';
 
@@ -103,37 +115,8 @@ export function Chat() {
 
   return (
     <div className="flex h-dvh min-w-0 flex-col bg-background">
-      {/* Header */}
-      <header className="shrink-0 border-b bg-background px-4 py-3">
-        <div className="mx-auto flex max-w-3xl items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="flex size-8 items-center justify-center rounded-full bg-primary/10">
-              <Ship className="size-4 text-primary" />
-            </div>
-            <div>
-              <h1 className="text-sm font-semibold text-foreground">
-                邮轮特价助手
-              </h1>
-              <p className="text-xs text-muted-foreground">
-                价格追踪 · 降价发现 · 文案生成
-              </p>
-            </div>
-          </div>
-          {mounted && (
-            <button
-              onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-              className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-              aria-label="Toggle theme"
-            >
-              {resolvedTheme === 'dark' ? (
-                <Sun className="size-4" />
-              ) : (
-                <Moon className="size-4" />
-              )}
-            </button>
-          )}
-        </div>
-      </header>
+      {/* Header — Sidebar toggle + 新建对话 */}
+      <ChatHeader />
 
       {/* Messages area */}
       <div className="relative flex-1 bg-background">
