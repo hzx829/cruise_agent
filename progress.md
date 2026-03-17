@@ -176,6 +176,44 @@ npm run dev
 
 ---
 
+## Phase 3.1: Agent 灵活化 ✅
+
+### 问题
+
+用户问"最便宜的航线"，agent 返回"降价幅度最大的"而非"价格最低的"。
+- 原因：system prompt 核心策略强制偏向"话题性 deal"，交互规则写死"优先推荐降价幅度大的 deal"
+- tool description 也带有营销偏见（如"这是发现最具话题性 deal 的关键工具"）
+
+### 已完成
+
+#### System Prompt 重写
+
+- [lib/ai/prompts.ts](lib/ai/prompts.ts) — 完全重写 `buildSystemPrompt()`
+  - 去掉"核心策略：发现话题性 Deal"等预设偏见
+  - 去掉"当用户意图模糊时，优先推荐降价幅度大的 deal"规则
+  - 新增**核心原则**：精准理解用户意图，选择正确的工具
+  - 新增工具-意图映射表（"最便宜的"→ searchDeals price ASC，"降价最多的"→ getTopPriceDrops）
+  - 保留品牌/层级/舱位等数据参考信息
+  - 小红书文案策略移至 generateCopywriting 工具内部，不再污染全局 prompt
+
+#### 新增 AI 工具（2 个，总计 14 个）
+
+- [lib/ai/tools/get-regional-prices.ts](lib/ai/tools/get-regional-prices.ts) — 跨区域价格对比（US/GB/AU/EU/CA/SG），含 USD 换算和节省百分比
+- [lib/ai/tools/get-stats.ts](lib/ai/tools/get-stats.ts) — 整体统计概览（总量、品牌数、均价、各品牌最低价排行、价格分布）
+
+#### 数据层增强
+
+- [lib/db/queries.ts](lib/db/queries.ts) — 新增查询函数：
+  - `getRegionalPrices(dealId)` — 查 regional_prices 表各区域价格
+  - `getOverallStats()` — 全局统计（总 deal 数、品牌最低价排行、价格分布）
+
+#### 工具描述优化
+
+- [lib/ai/tools/get-top-drops.ts](lib/ai/tools/get-top-drops.ts) — 去掉"话题性""小红书推广"措辞，明确注明"不等于最便宜"
+- [lib/ai/tools/get-hot-deals.ts](lib/ai/tools/get-hot-deals.ts) — 去掉"最值得推广"措辞，明确注明"按折扣深度排序，非绝对价格"
+
+---
+
 ## Phase 5: PC 端 UI + 聊天历史 + 主动通知 ✅
 
 详见 [phase5-upgrade.md](phase5-upgrade.md)

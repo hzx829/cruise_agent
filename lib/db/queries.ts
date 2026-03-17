@@ -433,6 +433,88 @@ export function getHotDealsByTier(filters?: {
     .all(...params, limit) as DealRow[];
 }
 
+/** 获取指定 deal 在各区域的价格 */
+export function getRegionalPrices(dealId: string) {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT rp.*, d.price AS us_price, d.price_currency AS us_currency
+       FROM regional_prices rp
+       JOIN deals d ON rp.deal_id = d.id
+       WHERE rp.deal_id = ?
+       ORDER BY rp.region`
+    )
+    .all(dealId) as {
+    deal_id: string;
+    region: string;
+    currency: string;
+    price: number;
+    us_price: number;
+    us_currency: string;
+  }[];
+}
+
+/** 获取整体统计数据 */
+export function getOverallStats() {
+  const db = getDb();
+
+  const totals = db
+    .prepare(
+      `SELECT COUNT(*) AS total_deals,
+              COUNT(DISTINCT brand_id) AS total_brands,
+              ROUND(AVG(price), 2) AS avg_price,
+              MIN(price) AS min_price,
+              MAX(price) AS max_price
+       FROM deals WHERE price > 0`
+    )
+    .get() as {
+    total_deals: number;
+    total_brands: number;
+    avg_price: number;
+    min_price: number;
+    max_price: number;
+  };
+
+  const brandMins = db
+    .prepare(
+      `SELECT d.brand_id, b.name_cn, b.name, b.tier,
+              MIN(d.price) AS min_price, d.price_currency AS currency
+       FROM deals d
+       LEFT JOIN brands b ON d.brand_id = b.id
+       WHERE d.price > 0
+       GROUP BY d.brand_id
+       ORDER BY min_price ASC`
+    )
+    .all() as {
+    brand_id: string;
+    name_cn: string | null;
+    name: string;
+    tier: string;
+    min_price: number;
+    currency: string;
+  }[];
+
+  const distribution = db
+    .prepare(
+      `SELECT
+         CASE
+           WHEN price < 200 THEN '<200'
+           WHEN price < 500 THEN '200-500'
+           WHEN price < 1000 THEN '500-1000'
+           WHEN price < 2000 THEN '1000-2000'
+           WHEN price < 5000 THEN '2000-5000'
+           ELSE '5000+'
+         END AS price_range,
+         COUNT(*) AS count
+       FROM deals WHERE price > 0
+       GROUP BY price_range
+       ORDER BY MIN(price)`
+    )
+    .all() as { price_range: string; count: number }[];
+
+  return { ...totals, brandMins, distribution };
+}
+
 /** 获取最近的价格变动 (有实际变动的快照) */
 export function getRecentPriceChanges(limit: number = 20) {
   const db = getDb();

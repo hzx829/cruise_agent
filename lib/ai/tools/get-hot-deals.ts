@@ -4,7 +4,7 @@ import * as queries from '@/lib/db/queries';
 
 export const getHotDeals = tool({
   description:
-    '获取最值得推广的高性价比航线（按 deal_score 排序）。可按品牌层级筛选，发现奢华/高端品牌中的超值折扣。deal_score 越高表示相对折扣越深。',
+    '获取 deal_score 最高的航线（折扣深度排序）。deal_score 衡量的是相对于基准价的折扣深度，越高表示折扣越深。可按品牌层级筛选。注意：这不是按绝对价格排序，而是按折扣深度排序。',
   inputSchema: z.object({
     tier: z
       .union([

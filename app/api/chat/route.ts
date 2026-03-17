@@ -22,6 +22,8 @@ import {
   getTrackingOverview,
   listDestinations,
   listCabinTypes,
+  getRegionalPrices,
+  getStats,
 } from '@/lib/ai/tools';
 
 export const maxDuration = 60;
@@ -94,6 +96,8 @@ export async function POST(req: Request) {
       getTrackingOverview,
       listDestinations,
       listCabinTypes,
+      getRegionalPrices,
+      getStats,
     },
     stopWhen: stepCountIs(5),
   });

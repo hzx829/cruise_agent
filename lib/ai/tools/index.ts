@@ -10,3 +10,5 @@ export { getHotDeals } from './get-hot-deals';
 export { getTrackingOverview } from './get-tracking-overview';
 export { listDestinations } from './list-destinations';
 export { listCabinTypes } from './list-cabin-types';
+export { getRegionalPrices } from './get-regional-prices';
+export { getStats } from './get-stats';

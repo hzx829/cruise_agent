@@ -4,7 +4,7 @@ import * as queries from '@/lib/db/queries';
 
 export const getTopPriceDrops = tool({
   description:
-    '获取降价幅度最大的航线。这是发现最具话题性 deal 的关键工具 — 尤其是高端/奢华品牌的大幅降价最适合小红书推广。返回按降价百分比排序的 deal 列表。',
+    '获取降价幅度最大的航线，按降价百分比排序。适合寻找近期大幅降价的航线。注意：这个工具只返回有降价记录的航线，不等于"最便宜的航线"。',
   inputSchema: z.object({
     tier: z
       .union([
