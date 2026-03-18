@@ -24,10 +24,7 @@ import { getChatHistoryPaginationKey } from './sidebar-history';
 const QUICK_ACTIONS = [
   { label: '🔥 最大降价', text: '帮我找降价幅度最大的邮轮航线，特别是高端和奢华品牌的' },
   { label: '💎 奢华特价', text: '搜索奢华和高端品牌(luxury/premium)中 deal_score 最高的航线' },
-  { label: '📉 降价趋势', text: '查看当前价格追踪系统的整体概览，哪些航线在持续降价？' },
-  { label: '🏝️ 加勒比海', text: '搜索去加勒比海的邮轮，按性价比排序' },
   { label: '✍️ 爆款文案', text: '找一个降价最多的航线，帮我生成小红书推广文案' },
-  { label: '🇨🇳 皇家加勒比', text: '搜索皇家加勒比中国市场的航线，有哪些好价？' },
 ];
 
 interface ChatProps {
@@ -159,8 +156,12 @@ export function Chat({ id, initialMessages }: ChatProps) {
               </div>
             ) : (
               <>
-                {messages.map((message) => (
-                  <Message key={message.id} message={message} />
+                {messages.map((message, idx) => (
+                  <Message
+                    key={message.id}
+                    message={message}
+                    isLoading={isLoading && idx === messages.length - 1}
+                  />
                 ))}
 
                 {status === 'submitted' && (

@@ -10,8 +10,25 @@ import { CopywritingCard } from './copywriting-card';
 import { Ship, Loader2, TrendingDown, Flame, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export function Message({ message }: { message: UIMessage }) {
+export function Message({
+  message,
+  isLoading,
+}: {
+  message: UIMessage;
+  isLoading?: boolean;
+}) {
   const isUser = message.role === 'user';
+
+  // 在多步工具调用之间（tool output-available 之后、下一个 step-start 处理完之前）显示思考点
+  const lastPart = message.parts[message.parts.length - 1];
+  const showThinkingDots =
+    !isUser &&
+    isLoading &&
+    (!lastPart ||
+      lastPart.type === 'step-start' ||
+      (lastPart.type.startsWith('tool-') &&
+        'state' in lastPart &&
+        (lastPart as { state: string }).state === 'output-available'));
 
   return (
     <div
@@ -162,6 +179,14 @@ export function Message({ message }: { message: UIMessage }) {
               return null;
           }
         })}
+
+        {showThinkingDots && (
+          <div className="flex items-center gap-1 py-1">
+            <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:0ms]" />
+            <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:150ms]" />
+            <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:300ms]" />
+          </div>
+        )}
       </div>
     </div>
   );
