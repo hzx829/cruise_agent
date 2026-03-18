@@ -7,8 +7,9 @@ import { DealList } from './deal-card';
 import { PriceChart } from './price-chart';
 import { CompareTable } from './compare-table';
 import { CopywritingCard } from './copywriting-card';
-import { Ship, Loader2, TrendingDown, Flame, BarChart3 } from 'lucide-react';
+import { Ship, Loader2, TrendingDown, Flame, BarChart3, Brain, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useState } from 'react';
 
 export function Message({
   message,
@@ -20,12 +21,15 @@ export function Message({
   const isUser = message.role === 'user';
 
   // 在多步工具调用之间（tool output-available 之后、下一个 step-start 处理完之前）显示思考点
+  // 注：部分 LLM 会在 tool-input 之前或之后插入一个空 text part（text-start 无后续 delta），
+  // 此时 lastPart.type === 'text' && !lastPart.text，同样需要显示 loading dots
   const lastPart = message.parts[message.parts.length - 1];
   const showThinkingDots =
     !isUser &&
     isLoading &&
     (!lastPart ||
       lastPart.type === 'step-start' ||
+      (lastPart.type === 'text' && !lastPart.text) ||
       (lastPart.type.startsWith('tool-') &&
         'state' in lastPart &&
         (lastPart as { state: string }).state === 'output-available'));
@@ -122,6 +126,10 @@ export function Message({
                 </div>
               );
 
+            // Reasoning (thinking) parts
+            case 'reasoning':
+              return <ReasoningBlock key={key} text={part.text} isStreaming={isLoading ?? false} />;
+
             // Tool parts
             case 'tool-searchDeals':
             case 'tool-getBrandOverview':
@@ -151,9 +159,14 @@ export function Message({
               }
 
               if (part.state === 'output-available') {
+                const toolResult = <ToolResult toolName={toolName} result={part.output} />;
                 return (
-                  <div key={key}>
-                    <ToolResult toolName={toolName} result={part.output} />
+                  <div key={key} className="space-y-2">
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <CheckCircle2 className="size-3 text-emerald-500" />
+                      <span>{getToolCompletedLabel(toolName)}</span>
+                    </div>
+                    {toolResult}
                   </div>
                 );
               }
@@ -204,8 +217,70 @@ function getToolLabel(toolName: string): string {
     getTopPriceDrops: '🔥 搜索降价排行...',
     getHotDeals: '💎 搜索热门特价...',
     getTrackingOverview: '📡 获取追踪概览...',
+    listDestinations: '🗺️ 获取目的地列表...',
+    listCabinTypes: '🚢 获取舱型列表...',
+    getRegionalPrices: '🌍 获取多区域价格...',
+    getStats: '📊 获取统计数据...',
   };
   return labels[toolName] || `${toolName}...`;
+}
+
+function getToolCompletedLabel(toolName: string): string {
+  const labels: Record<string, string> = {
+    searchDeals: '已搜索航线',
+    getBrandOverview: '已获取品牌概览',
+    analyzePrices: '已分析价格',
+    getPriceHistory: '已查询价格历史',
+    generateChart: '已生成图表',
+    compareCruises: '已对比航线',
+    generateCopywriting: '已生成文案素材',
+    getTopPriceDrops: '已获取降价排行',
+    getHotDeals: '已获取热门特价',
+    getTrackingOverview: '已获取追踪概览',
+    listDestinations: '已获取目的地列表',
+    listCabinTypes: '已获取舱型列表',
+    getRegionalPrices: '已获取多区域价格',
+    getStats: '已获取统计数据',
+  };
+  return labels[toolName] || toolName;
+}
+
+function ReasoningBlock({ text, isStreaming }: { text: string; isStreaming: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="rounded-lg border border-dashed border-muted-foreground/30 bg-muted/20 text-xs">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center gap-1.5 px-3 py-2 text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <Brain className="size-3 shrink-0" />
+        <span className="flex-1 text-left">
+          {isStreaming ? (
+            <span className="flex items-center gap-1">
+              思考中
+              <span className="inline-flex gap-0.5">
+                <span className="size-1 animate-bounce rounded-full bg-current [animation-delay:0ms]" />
+                <span className="size-1 animate-bounce rounded-full bg-current [animation-delay:150ms]" />
+                <span className="size-1 animate-bounce rounded-full bg-current [animation-delay:300ms]" />
+              </span>
+            </span>
+          ) : (
+            '思考过程'
+          )}
+        </span>
+        {!isStreaming && (
+          expanded ? <ChevronUp className="size-3 shrink-0" /> : <ChevronDown className="size-3 shrink-0" />
+        )}
+      </button>
+      {(expanded || isStreaming) && text && (
+        <div className="border-t border-dashed border-muted-foreground/20 px-3 py-2 text-muted-foreground/80 leading-relaxed whitespace-pre-wrap">
+          {text}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
