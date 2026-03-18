@@ -15,8 +15,11 @@ import {
   Ship,
   ArrowDown,
 } from 'lucide-react';
+import { useSWRConfig } from 'swr';
+import { unstable_serialize } from 'swr/infinite';
 import { Message } from './message';
 import { ChatHeader } from './chat-header';
+import { getChatHistoryPaginationKey } from './sidebar-history';
 
 const QUICK_ACTIONS = [
   { label: '🔥 最大降价', text: '帮我找降价幅度最大的邮轮航线，特别是高端和奢华品牌的' },
@@ -35,6 +38,7 @@ interface ChatProps {
 export function Chat({ id, initialMessages }: ChatProps) {
   const [chatId] = useState(() => id ?? generateId());
   const hasReplacedUrl = useRef(false);
+  const { mutate } = useSWRConfig();
 
   const { messages, sendMessage, status, stop } = useChat({
     id: chatId,
@@ -50,6 +54,10 @@ export function Chat({ id, initialMessages }: ChatProps) {
         };
       },
     }),
+    onFinish: () => {
+      // 消息完成后刷新侧边栏历史列表
+      mutate(unstable_serialize(getChatHistoryPaginationKey));
+    },
   });
 
   // 首次发消息后更新 URL（streaming 时 DB 中已存在记录）

@@ -47,7 +47,10 @@ export function AppSidebar() {
           <SidebarMenuItem>
             <SidebarMenuButton
               tooltip="新建对话"
-              onClick={() => router.push('/chat')}
+              onClick={() => {
+                router.push('/chat');
+                router.refresh();
+              }}
             >
               <Plus />
               <span>新建对话</span>

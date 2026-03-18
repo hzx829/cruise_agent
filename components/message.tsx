@@ -2,6 +2,7 @@
 
 import type { UIMessage } from 'ai';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { DealList } from './deal-card';
 import { PriceChart } from './price-chart';
 import { CompareTable } from './compare-table';
@@ -55,6 +56,7 @@ export function Message({ message }: { message: UIMessage }) {
                   ) : (
                     <div className="prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-headings:my-2 prose-pre:my-2">
                       <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
                         components={{
                           p: ({ children }) => (
                             <p className="mb-2 last:mb-0">{children}</p>

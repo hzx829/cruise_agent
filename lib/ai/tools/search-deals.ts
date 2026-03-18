@@ -1,6 +1,7 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import * as queries from '@/lib/db/queries';
+import { tierSchema } from './schemas';
 
 export const searchDeals = tool({
   description:
@@ -34,13 +35,7 @@ export const searchDeals = tool({
       .enum(['up', 'down', 'stable', 'new'])
       .optional()
       .describe('价格趋势筛选: up(涨价) / down(降价) / stable(稳定) / new(新上架)'),
-    tier: z
-      .union([
-        z.enum(['budget', 'standard', 'premium', 'luxury']),
-        z.array(z.enum(['budget', 'standard', 'premium', 'luxury'])),
-      ])
-      .optional()
-      .describe('品牌层级，可传单个或数组: budget(大众) / standard(标准) / premium(高端) / luxury(奢华)'),
+    tier: tierSchema,
     minScore: z.number().optional().describe('最低 deal_score 筛选'),
     sortBy: z
       .enum(['price', 'sail_date', 'duration_days', 'deal_score', 'price_change_count'])

@@ -24,7 +24,10 @@ export function ChatHeader() {
         <Tooltip>
           <TooltipTrigger asChild>
             <button
-              onClick={() => router.push('/chat')}
+              onClick={() => {
+                router.push('/chat');
+                router.refresh();
+              }}
               className="inline-flex size-7 items-center justify-center rounded-md hover:bg-accent"
             >
               <Plus className="size-4" />

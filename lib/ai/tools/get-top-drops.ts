@@ -1,27 +1,18 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import * as queries from '@/lib/db/queries';
+import { tierSchema, normalizeTier } from './schemas';
 
 export const getTopPriceDrops = tool({
   description:
     '获取降价幅度最大的航线，按降价百分比排序。适合寻找近期大幅降价的航线。注意：这个工具只返回有降价记录的航线，不等于"最便宜的航线"。',
   inputSchema: z.object({
-    tier: z
-      .union([
-        z.enum(['budget', 'standard', 'premium', 'luxury']),
-        z.array(z.enum(['budget', 'standard', 'premium', 'luxury'])),
-      ])
-      .optional()
-      .describe(
-        '品牌层级筛选，可传单个或数组: budget(大众) / standard(标准) / premium(高端) / luxury(奢华)。不填则返回所有层级'
-      ),
+    tier: tierSchema,
     brand: z.string().optional().describe('品牌 ID 筛选'),
     limit: z.number().optional().describe('返回数量，默认 15'),
   }),
   execute: async (params) => {
-    const tierArr = params.tier
-      ? Array.isArray(params.tier) ? params.tier : [params.tier]
-      : undefined;
+    const tierArr = normalizeTier(params.tier);
     const drops = queries.getTopPriceDrops({
       brand: params.brand,
       tier: tierArr,

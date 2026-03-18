@@ -37,7 +37,14 @@ type HistoryPage = {
   hasMore: boolean;
 };
 
-function getKey(pageIndex: number, previousPageData: HistoryPage | null) {
+/**
+ * SWR Infinite pagination key 函数
+ * 导出以便其他组件可以使用 mutate 刷新历史列表
+ */
+export function getChatHistoryPaginationKey(
+  pageIndex: number,
+  previousPageData: HistoryPage | null,
+) {
   if (pageIndex === 0) return `/api/history?limit=${PAGE_SIZE}`;
   if (!previousPageData?.hasMore) return null;
   const lastChat = previousPageData.chats.at(-1);
@@ -97,7 +104,7 @@ function HistorySkeleton() {
 
 export function SidebarHistory() {
   const { data, size, setSize, isLoading, isValidating, mutate } =
-    useSWRInfinite<HistoryPage>(getKey, fetcher, {
+    useSWRInfinite<HistoryPage>(getChatHistoryPaginationKey, fetcher, {
       dedupingInterval: 5000,
     });
 
