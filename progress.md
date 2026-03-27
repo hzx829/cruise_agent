@@ -176,6 +176,69 @@ npm run dev
 
 ---
 
+## 生产部署 ✅
+
+### 服务器信息
+
+- **IP**: 211.149.161.68，SSH 端口 22000
+- **OS**: Ubuntu 22.04，1.9GB RAM，30GB 磁盘
+- **域名**: https://www.cruiseswift.com
+- **备案**: 进行中（未备案期间 HTTPS 可访问，HTTP 80 端口被拦截）
+
+### 部署架构
+
+```
+本地 Mac
+  └── cruise_crawler (Python/FastAPI, 端口 9000)
+        └── rsync → /data/cruise_deals.db (59MB)
+
+服务器 211.149.161.68
+  ├── Nginx (80/443)
+  │     ├── 80 → 301 redirect HTTPS
+  │     └── 443 → proxy_pass 127.0.0.1:3000
+  ├── PM2 → cruise_agent (Next.js, 端口 3000)
+  └── /data/cruise_deals.db (只读，DB_PATH 环境变量指定)
+```
+
+### 已完成
+
+- Node.js 22 + pnpm + PM2 安装，PM2 开机自启 (systemd)
+- Nginx 反代配置（大缓冲区 128k/256k、gzip、静态资源长缓存）
+- Let's Encrypt SSL 证书（acme.sh + DNS-01 验证，90 天自动续期）
+- 2GB Swap（防止构建 OOM）
+- `/data/cruise_deals.db` 初始同步
+
+### 关键脚本
+
+- [scripts/deploy.sh](scripts/deploy.sh) — 代码部署（`--update` rsync + build + pm2 reload）
+- [scripts/sync_db.sh](scripts/sync_db.sh) — 数据库同步到服务器
+
+### 常用运维命令
+
+```bash
+# 更新部署
+cd "/Users/zionhuang/My project/cruise_agent"
+./scripts/deploy.sh --update
+
+# 同步数据库
+cd "/Users/zionhuang/My project/cruise_crawler"
+./scripts/sync_db.sh
+
+# 查看服务状态
+ssh -p 22000 root@211.149.161.68 'pm2 status'
+
+# 查看应用日志
+ssh -p 22000 root@211.149.161.68 'pm2 logs cruise_agent --lines 50'
+```
+
+### 注意事项
+
+- **备案问题**：未备案期间国内运营商会随机拦截 HTTPS 请求（SNI 检测），导致部分 JS chunk 加载失败（ERR_CONNECTION_CLOSED），备案完成后自动解决
+- **证书续期**：acme.sh DNS 手动模式需每 90 天手动更新 TXT 记录续期，备案完成后可切换到 HTTP 验证实现全自动续期
+- **DB 同步**：每次爬取新数据后执行 `sync_db.sh`，服务器端实时生效（Next.js 无缓存，每次请求直接读 SQLite）
+
+---
+
 ## Phase 3.1: Agent 灵活化 ✅
 
 ### 问题

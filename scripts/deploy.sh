@@ -11,11 +11,11 @@ set -e
 
 # ---- 配置（根据实际情况修改） ----
 SERVER_USER="root"
-SERVER_HOST=""                      # 填写服务器 IP，如 123.45.67.89
-SERVER_PORT="22"
+SERVER_HOST="211.149.161.68"          # 服务器 IP
+SERVER_PORT="22000"                    # 非标准 SSH 端口
 REMOTE_APP_DIR="/srv/cruise_agent"
 REMOTE_DATA_DIR="/data"
-DOMAIN=""                           # 填写域名，如 example.com
+DOMAIN="www.cruiseswift.com"
 APP_PORT=3000
 
 # ---- 颜色输出 ----
