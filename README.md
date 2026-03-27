@@ -1,36 +1,125 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Cruise Agent 🚢
 
-## Getting Started
+邮轮特价智能助手 — 基于 AI 的邮轮航次搜索与比价工具。
 
-First, run the development server:
+数据来源：[cruise_crawler](../cruise_crawler)，通过直连本地 SQLite 读取爬虫抓取的邮轮数据，无需额外后端服务。
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## 功能
+
+- 🤖 **AI 对话**：用自然语言搜索邮轮特价，支持目的地、品牌、舱位、预算等多维度筛选
+- 📊 **价格分析**：历史价格走势、降价幅度排行
+- 🌍 **多区域价格**：对比 USD / EUR / GBP / AUD 等不同货币报价
+- 🔔 **比价表格**：跨品牌、跨舱位横向对比
+- ✍️ **营销文案**：一键生成邮轮特价推广文案
+
+## 技术栈
+
+- **框架**：Next.js 16 (App Router)
+- **AI**：智谱 GLM / OpenAI，使用 [AI SDK](https://sdk.vercel.ai)
+- **数据库**：SQLite（`better-sqlite3`，只读直连爬虫数据库）
+- **UI**：Tailwind CSS v4 + Radix UI + Recharts
+
+## 本地开发
+
+### 前置条件
+
+确保 [cruise_crawler](../cruise_crawler) 已运行过爬虫，本地存在数据库文件：
+
+```text
+../cruise_crawler/data/cruise_deals.db
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 启动
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+pnpm install
+pnpm dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+访问 [http://localhost:3000](http://localhost:3000)
 
-## Learn More
+### 环境变量
 
-To learn more about Next.js, take a look at the following resources:
+创建 `.env.local`：
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```env
+# AI 提供商: zhipu | openai
+AI_PROVIDER=zhipu
+CHAT_MODEL=glm-5
+ZHIPU_API_KEY=your_key_here
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+# OpenAI（AI_PROVIDER=openai 时使用）
+# OPENAI_API_KEY=sk-xxx
 
-## Deploy on Vercel
+# 数据库路径（默认自动推断，生产环境需显式指定）
+# DB_PATH=/data/cruise_deals.db
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 生产部署
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### 架构说明
+
+```text
+本地 Mac
+├── cruise_crawler  →  爬取数据  →  cruise_deals.db
+└── scripts/sync_db.sh  →  rsync  →  服务器 /data/cruise_deals.db
+                                          ↓
+                                    cruise_agent (PM2 + Next.js)
+                                          ↓
+                                    Nginx 反向代理 + SSL
+```
+
+cruise_crawler **不需要**部署到服务器，只需定期将本地数据库同步到服务器即可。
+
+### 首次部署
+
+**1. 填写服务器信息**（编辑 `scripts/deploy.sh` 顶部）：
+
+```bash
+SERVER_HOST="你的服务器IP"
+DOMAIN="你的域名.com"
+```
+
+**2. 初始化服务器**（安装 Node.js / PM2 / Nginx / SSL 证书）：
+
+```bash
+./scripts/deploy.sh --setup
+```
+
+**3. 部署应用**：
+
+```bash
+./scripts/deploy.sh --update
+```
+
+### 数据库同步
+
+在 `cruise_crawler` 目录下操作：
+
+```bash
+# 填写服务器信息（编辑 scripts/sync_db.sh 顶部的 SERVER_HOST）
+
+# 直接同步当前数据库
+./scripts/sync_db.sh
+
+# 爬取后自动同步
+./scripts/sync_db.sh --after-crawl
+
+# 设置每天凌晨 3 点定时同步
+./scripts/sync_db.sh --cron
+
+# 对比本地与服务器数据差异
+./scripts/sync_db.sh --diff
+```
+
+### 后续更新代码
+
+```bash
+./scripts/deploy.sh --update
+```
+
+### 查看运行状态
+
+```bash
+./scripts/deploy.sh --status
+```
