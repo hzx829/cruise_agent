@@ -95,6 +95,10 @@ export interface DestinationSummary {
 export interface SearchFilters {
   brand?: string;
   destination?: string;
+  departurePort?: string;
+  arrivalPort?: string;
+  itineraryIncludes?: string[];
+  itineraryExcludes?: string[];
   priceMin?: number;
   priceMax?: number;
   sailDateFrom?: string;
@@ -102,12 +106,19 @@ export interface SearchFilters {
   durationMin?: number;
   durationMax?: number;
   cabinType?: string;
+  roundtrip?: boolean;
+  routeRegion?: 'aegean' | 'eastern_mediterranean' | 'western_mediterranean';
   priceTrend?: string; // 'up' | 'down' | 'stable' | 'new'
   tier?: string | string[]; // 'budget' | 'standard' | 'premium' | 'luxury' (或数组)
   minScore?: number;
   sortBy?: 'price' | 'sail_date' | 'duration_days' | 'deal_score' | 'price_change_count';
   sortOrder?: 'asc' | 'desc';
   limit?: number;
+}
+
+export interface SearchDealsResult {
+  totalMatches: number;
+  deals: DealRow[];
 }
 
 export interface TrackingStats {

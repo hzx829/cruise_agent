@@ -304,21 +304,30 @@ function ToolResult({
       return result?.deals ? (
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground">
-            找到 {result.count} 条航线
+            {result.count > 0
+              ? `找到 ${result.count} 个匹配航次`
+              : '未找到符合条件的航次'}
           </p>
-          <DealList deals={result.deals} />
+          {result.count > 0 && (
+            <p className="text-xs text-muted-foreground">
+              {result.requestedCabinType
+                ? `已按航次去重，显示指定房型 ${result.requestedCabinType} 的价格`
+                : '已按航次去重，仅显示每个航次的最低起价'}
+            </p>
+          )}
+          {result.count > 0 && <DealList deals={result.deals} />}
         </div>
       ) : null;
 
     case 'getTopPriceDrops':
-      return result?.drops ? (
+      return (result?.deals || result?.drops) ? (
         <div className="space-y-2">
           <div className="flex items-center gap-1.5 text-xs font-medium text-destructive">
             <TrendingDown className="size-3.5" />
-            <span>降价排行 · 共 {result.drops.length} 条</span>
+            <span>降价排行 · 共 {(result.deals || result.drops).length} 条</span>
           </div>
           <DealList
-            deals={result.drops.map((d: any) => ({
+            deals={(result.deals || result.drops).map((d: any) => ({
               id: d.id,
               brand: d.brand,
               dealName: d.dealName,

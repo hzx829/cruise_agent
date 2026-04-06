@@ -1,6 +1,7 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import * as queries from '@/lib/db/queries';
+import { dealIdSchema } from './schemas';
 
 // 粗略即时汇率 (→ USD), 与 cruise_crawler API 保持一致
 const FX_TO_USD: Record<string, number> = {
@@ -17,7 +18,7 @@ export const getRegionalPrices = tool({
   description:
     '获取某个 deal 在不同区域（US/GB/AU/EU/CA/SG）的价格。可用于跨区域比价，发现哪个区域购买最便宜。返回各区域价格、USD 等价、相对 US 的节省百分比。',
   inputSchema: z.object({
-    dealId: z.string().describe('Deal ID'),
+    dealId: dealIdSchema,
   }),
   execute: async ({ dealId }) => {
     const rows = queries.getRegionalPrices(dealId);

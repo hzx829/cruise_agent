@@ -28,6 +28,27 @@ export const tierSchema = z
   );
 
 /**
+ * deal 主键是 cruise_crawler 生成的 16 位十六进制字符串
+ * 调工具时必须原样复用上一个工具返回的 id，不能拿排名、deal_score 或价格代替
+ */
+export const dealIdSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[0-9a-f]{16}$/, 'dealId 必须是 16 位十六进制字符串')
+  .describe(
+    '航线 deal ID（16 位十六进制字符串），必须直接使用上一工具返回的 id 原值，不能用排名、deal_score、价格或序号代替'
+  );
+
+export const dealIdsSchema = z
+  .array(dealIdSchema)
+  .min(2)
+  .max(5)
+  .describe(
+    '要对比的 deal ID 列表（2~5 个）。每个 ID 都必须原样复用上一工具返回的字符串 id'
+  );
+
+/**
  * 将 tier 参数统一转换为数组
  */
 export function normalizeTier(tier: Tier | Tier[] | undefined): Tier[] | undefined {

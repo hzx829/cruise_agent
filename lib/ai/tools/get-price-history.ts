@@ -1,12 +1,13 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import * as queries from '@/lib/db/queries';
+import { dealIdSchema } from './schemas';
 
 export const getPriceHistory = tool({
   description:
     '获取某个 deal 的价格变动历史和追踪统计信息，用于追踪价格趋势。包含历史最高/最低价、变动次数、趋势等。',
   inputSchema: z.object({
-    dealId: z.string().describe('Deal ID'),
+    dealId: dealIdSchema,
   }),
   execute: async ({ dealId }) => {
     const deal = queries.getDealById(dealId);

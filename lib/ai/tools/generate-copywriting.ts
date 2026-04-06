@@ -1,12 +1,13 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import * as queries from '@/lib/db/queries';
+import { dealIdSchema } from './schemas';
 
 export const generateCopywriting = tool({
   description:
     '根据指定航线生成小红书种草文案。工具会获取航线详情，AI 会根据数据生成吸引人的中文推广文案。',
   inputSchema: z.object({
-    dealId: z.number().describe('要生成文案的航线 deal ID'),
+    dealId: dealIdSchema,
     style: z
       .enum(['种草', '攻略', '测评'])
       .default('种草')
@@ -17,9 +18,9 @@ export const generateCopywriting = tool({
       .describe('需要强调的卖点，如 "亲子"、"蜜月"、"性价比"'),
   }),
   execute: async ({ dealId, style, highlights }) => {
-    const deal = queries.getDealById(String(dealId));
+    const deal = queries.getDealById(dealId);
     if (!deal) {
-      return { error: '未找到该航线，请检查 ID 是否正确。' };
+      return { error: '未找到该航线，请确认传入的是上一工具返回的字符串 dealId。' };
     }
 
     const perks = deal.perks ? JSON.parse(deal.perks) : [];

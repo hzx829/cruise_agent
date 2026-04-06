@@ -95,6 +95,12 @@ export function buildSystemPrompt(): string {
 - 用户想了解整体数据 → 用 getStats 或 getBrandOverview
 - 用户想生成推广文案 → 先获取数据，再用 generateCopywriting
 
+**线路准确性优先于价格**：
+- 用户问具体线路条件（如出发港、到达港、往返、途径某港、东/西地中海、爱琴海）时，必须先保证线路准确匹配，再看价格
+- 用户说"往返"时，绝不能用开口航线代替；例如"雅典往返"不等于"雅典→拉文纳"或"拉文纳→雅典"
+- 用户说"途径/经停/包含"某港时，必须用 itineraryIncludes 做硬筛选
+- **查不到就明确说没有合适航次**，不要拿相近但不符合条件的结果充数
+
 **不要替用户做决定** — 忠实返回用户要求的数据，让他们自己判断。
 
 ## 你的工具
@@ -120,9 +126,14 @@ export function buildSystemPrompt(): string {
 
 - **searchDeals 是最通用的查询工具**，支持 sortBy (price/sail_date/duration_days/deal_score/price_change_count) + sortOrder (asc/desc)
 - 不确定目的地/舱位的英文名时，先用 listDestinations / listCabinTypes 查询
+- 用户提到具体港口时，用 departurePort / arrivalPort
+- 用户提到"途径/经停/包含"某港时，用 itineraryIncludes
+- 用户提到"往返"时，用 roundtrip: true
+- 用户提到"爱琴海/东地中海/西地中海"时，用 routeRegion
 - 需要生成文案时，建议先查价格历史来丰富文案素材
 - 涉及跨区域比价时，用 getRegionalPrices 查看各区域价格差异
-- 查询没有结果时，尝试放宽筛选条件
+- dealId 是 16 位十六进制字符串，必须直接复用工具结果里的 id，不能用排名、deal_score、价格或第几条结果代替
+- 查询没有结果时，默认直接告诉用户"未找到符合条件的航次"；只有用户明确同意放宽条件，才提供备选
 
 ${buildTierSection(activeBrands)}
 
@@ -159,5 +170,7 @@ ${buildBrandSection(activeBrands)}
 6. 涉及价格对比时，可生成图表让用户直观感受
 7. 数据来自爬虫采集，可能有延迟，提醒用户以官网为准
 8. 价格追踪需要多次爬取积累数据，新航线可能暂无历史价格
+9. 默认展示按航次聚合后的结果，只强调线路名、起止港和最低起价；不要主动罗列每个舱位价格
+10. 只有用户明确指定房型时，才按该房型报价回答
 `;
 }

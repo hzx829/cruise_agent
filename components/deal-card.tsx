@@ -7,6 +7,7 @@ import {
   Calendar,
   Ship,
   MapPin,
+  Route,
   TrendingDown,
   TrendingUp,
   Minus,
@@ -20,6 +21,12 @@ interface DealData {
   brandId?: string;
   dealName: string;
   shipName?: string;
+  departurePort?: string;
+  arrivalPort?: string;
+  routeStartPort?: string;
+  routeEndPort?: string;
+  routeLabel?: string | null;
+  routeType?: 'roundtrip' | 'open_jaw' | null;
   destination?: string;
   itinerary?: string;
   durationDays?: number;
@@ -94,7 +101,8 @@ const TIER_LABELS: Record<string, { label: string; className: string }> = {
 };
 
 export function DealCard({ deal }: { deal: DealData }) {
-  const currencySymbol = deal.currency === 'CNY' ? '¥' : '$';
+  const currencySymbol =
+    deal.currency === 'CNY' ? '¥' : deal.currency === 'EUR' ? '€' : '$';
   const trend = deal.priceTrend ? TREND_CONFIG[deal.priceTrend] : null;
   const tier = deal.brandTier ? TIER_LABELS[deal.brandTier] : null;
 
@@ -193,6 +201,20 @@ export function DealCard({ deal }: { deal: DealData }) {
           </div>
         )}
       </div>
+
+      {deal.routeLabel && (
+        <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-muted/35 px-2.5 py-1.5 text-xs text-muted-foreground">
+          <Route className="mt-0.5 size-3 shrink-0" />
+          <div className="min-w-0">
+            <span className="truncate">{deal.routeLabel}</span>
+            {deal.routeType && (
+              <span className="ml-1 text-[11px]">
+                {deal.routeType === 'roundtrip' ? '往返' : '开口'}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Deal score */}
       {deal.dealScore != null && deal.dealScore > 0 && (

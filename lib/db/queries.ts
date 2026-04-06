@@ -7,12 +7,156 @@ import type {
   DestinationSummary,
   PriceHistoryRow,
   SearchFilters,
+  SearchDealsResult,
   TopDrop,
 } from './types';
+import {
+  compareCabinPriority,
+  getRouteEndpoints,
+  isEquivalentLocation,
+  matchesCabinType,
+  matchesLocation,
+  matchesRouteRegion,
+} from '@/lib/cruise/search-utils';
 
 // ─── Deal 查询 ──────────────────────────────────────────
 
-export function searchDeals(filters: SearchFilters): DealRow[] {
+function buildSailingKey(deal: DealRow): string {
+  return [
+    deal.brand_id,
+    deal.deal_name ?? '',
+    deal.ship_name ?? '',
+    deal.departure_port ?? '',
+    deal.destination ?? '',
+    deal.itinerary ?? '',
+    deal.duration_days ?? '',
+    deal.sail_date ?? '',
+    deal.sail_date_end ?? '',
+  ].join('||');
+}
+
+function pickCheapestBySailing(deals: DealRow[]): DealRow[] {
+  const grouped = new Map<string, DealRow>();
+
+  for (const deal of deals) {
+    const key = buildSailingKey(deal);
+    const existing = grouped.get(key);
+
+    if (
+      !existing ||
+      deal.price < existing.price ||
+      (deal.price === existing.price &&
+        compareCabinPriority(deal.cabin_type, existing.cabin_type) < 0)
+    ) {
+      grouped.set(key, deal);
+    }
+  }
+
+  return Array.from(grouped.values());
+}
+
+function compareValues(a: number | string | null | undefined, b: number | string | null | undefined): number {
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a).localeCompare(String(b));
+}
+
+function sortDeals(deals: DealRow[], filters: SearchFilters): DealRow[] {
+  const sortCol = filters.sortBy || 'price';
+  const sortDir = filters.sortOrder === 'desc' ? -1 : 1;
+
+  return [...deals].sort((left, right) => {
+    const primary = compareValues(
+      left[sortCol as keyof DealRow] as number | string | null | undefined,
+      right[sortCol as keyof DealRow] as number | string | null | undefined
+    );
+    if (primary !== 0) return primary * sortDir;
+
+    const byDate = compareValues(left.sail_date, right.sail_date);
+    if (byDate !== 0) return byDate;
+
+    return left.price - right.price;
+  });
+}
+
+function matchesAdvancedFilters(deal: DealRow, filters: SearchFilters): boolean {
+  if (filters.cabinType && !matchesCabinType(deal.cabin_type, filters.cabinType)) {
+    return false;
+  }
+
+  const { startPort, endPort } = getRouteEndpoints(deal);
+
+  if (filters.departurePort && !matchesLocation(startPort, filters.departurePort)) {
+    return false;
+  }
+
+  if (filters.arrivalPort && !matchesLocation(endPort, filters.arrivalPort)) {
+    return false;
+  }
+
+  if (filters.roundtrip && !isEquivalentLocation(startPort, endPort)) {
+    return false;
+  }
+
+  if (filters.itineraryIncludes?.length) {
+    const searchableText = [deal.itinerary, deal.destination].join(' ');
+    const allIncluded = filters.itineraryIncludes.every((term) =>
+      matchesLocation(searchableText, term)
+    );
+    if (!allIncluded) {
+      return false;
+    }
+  }
+
+  if (filters.itineraryExcludes?.length) {
+    const searchableText = [deal.itinerary, deal.destination].join(' ');
+    const hasExcluded = filters.itineraryExcludes.some((term) =>
+      matchesLocation(searchableText, term)
+    );
+    if (hasExcluded) {
+      return false;
+    }
+  }
+
+  if (filters.routeRegion && !matchesRouteRegion(deal, filters.routeRegion)) {
+    return false;
+  }
+
+  return true;
+}
+
+function buildSearchSql(where: string, groupedBySailing: boolean): string {
+  if (!groupedBySailing) {
+    return `
+      SELECT d.*, b.name AS brand_name, b.name_cn AS brand_name_cn, b.tier AS brand_tier
+      FROM deals d
+      LEFT JOIN brands b ON d.brand_id = b.id
+      ${where}
+    `;
+  }
+
+  return `
+    WITH ranked AS (
+      SELECT d.*, b.name AS brand_name, b.name_cn AS brand_name_cn, b.tier AS brand_tier,
+             ROW_NUMBER() OVER (
+               PARTITION BY d.brand_id, COALESCE(d.deal_name, ''), COALESCE(d.ship_name, ''),
+                            COALESCE(d.departure_port, ''), COALESCE(d.destination, ''),
+                            COALESCE(d.itinerary, ''), COALESCE(d.duration_days, -1),
+                            COALESCE(d.sail_date, ''), COALESCE(d.sail_date_end, '')
+               ORDER BY d.price ASC, COALESCE(d.cabin_type, '')
+             ) AS sailing_rank
+      FROM deals d
+      LEFT JOIN brands b ON d.brand_id = b.id
+      ${where}
+    )
+    SELECT * FROM ranked
+    WHERE sailing_rank = 1
+  `;
+}
+
+export function searchDeals(filters: SearchFilters): SearchDealsResult {
   const db = getDb();
   const conditions: string[] = ['d.price > 0'];
   const params: (string | number)[] = [];
@@ -49,10 +193,6 @@ export function searchDeals(filters: SearchFilters): DealRow[] {
     conditions.push('d.duration_days <= ?');
     params.push(filters.durationMax);
   }
-  if (filters.cabinType) {
-    conditions.push('LOWER(d.cabin_type) LIKE ?');
-    params.push(`%${filters.cabinType.toLowerCase()}%`);
-  }
   if (filters.priceTrend) {
     conditions.push('d.price_trend = ?');
     params.push(filters.priceTrend);
@@ -68,21 +208,23 @@ export function searchDeals(filters: SearchFilters): DealRow[] {
   }
 
   const where = 'WHERE ' + conditions.join(' AND ');
-  const sortCol = filters.sortBy || 'price';
-  const sortDir = filters.sortOrder || 'ASC';
   const limit = Math.min(filters.limit || 20, 50);
+  const groupedBySailing = !filters.cabinType;
+  const sql = buildSearchSql(where, groupedBySailing);
 
-  const sql = `
-    SELECT d.*, b.name AS brand_name, b.name_cn AS brand_name_cn, b.tier AS brand_tier
-    FROM deals d
-    LEFT JOIN brands b ON d.brand_id = b.id
-    ${where}
-    ORDER BY d.${sortCol} ${sortDir}
-    LIMIT ?
-  `;
-  params.push(limit);
+  const baseDeals = db.prepare(sql).all(...params) as DealRow[];
+  const advancedFiltered = baseDeals.filter((deal) =>
+    matchesAdvancedFilters(deal, filters)
+  );
+  const dedupedDeals = groupedBySailing
+    ? advancedFiltered
+    : pickCheapestBySailing(advancedFiltered);
+  const sortedDeals = sortDeals(dedupedDeals, filters);
 
-  return db.prepare(sql).all(...params) as DealRow[];
+  return {
+    totalMatches: sortedDeals.length,
+    deals: sortedDeals.slice(0, limit),
+  };
 }
 
 export function getDealById(dealId: string): DealRow | undefined {
