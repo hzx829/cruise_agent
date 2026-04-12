@@ -4,8 +4,11 @@ export interface DealRow {
   deal_name: string;
   deal_url: string | null;
   ship_name: string | null;
+  ship_id: string | null;
   departure_port: string | null;
+  departure_port_id: string | null;
   destination: string | null;
+  primary_destination_term_id: string | null;
   itinerary: string | null;
   duration_days: number | null;
   duration_nights: number | null;
@@ -39,6 +42,14 @@ export interface DealRow {
   brand_name?: string;
   brand_name_cn?: string;
   brand_tier?: string;
+  brand_name_display?: string | null;
+  brand_short_name_display?: string | null;
+  ship_name_display?: string | null;
+  departure_port_display?: string | null;
+  destination_display?: string | null;
+  destination_id?: string | null;
+  perks_display?: string | null;
+  perks_raw?: string | null;
 }
 
 export interface BrandRow {
@@ -86,6 +97,9 @@ export interface ActiveBrandInfo {
 }
 
 export interface DestinationSummary {
+  id: string | null;
+  name: string;
+  canonical_name: string | null;
   destination: string;
   count: number;
   min_price: number;
@@ -94,6 +108,8 @@ export interface DestinationSummary {
 
 export interface SearchFilters {
   brand?: string;
+  locale?: 'zh-CN' | 'en' | string;
+  destinationId?: string;
   destination?: string;
   departurePort?: string;
   arrivalPort?: string;
@@ -134,7 +150,9 @@ export interface TopDrop {
   brand_id: string;
   deal_name: string;
   ship_name: string | null;
+  ship_id?: string | null;
   destination: string | null;
+  primary_destination_term_id?: string | null;
   price: number;
   price_currency: string;
   price_highest: number;
@@ -150,4 +168,12 @@ export interface TopDrop {
   brand_name?: string;
   brand_name_cn?: string;
   brand_tier?: string;
+  brand_name_display?: string | null;
+  brand_short_name_display?: string | null;
+  ship_name_display?: string | null;
+  departure_port_display?: string | null;
+  destination_display?: string | null;
+  destination_id?: string | null;
+  perks_display?: string | null;
+  perks_raw?: string | null;
 }

@@ -4,12 +4,18 @@ import { Ship, ArrowRightLeft } from 'lucide-react';
 
 interface CompareData {
   deals: Array<{
-    id: number;
+    id: string;
     brand: string;
+    brandRaw?: string;
     dealName: string;
     shipName?: string;
+    shipNameRaw?: string;
     destination?: string;
+    destinationRaw?: string;
+    destinationId?: string | null;
     departurePort?: string;
+    departurePortRaw?: string;
+    departurePortId?: string | null;
     duration?: string;
     sailDate?: string;
     price: number;
@@ -20,6 +26,7 @@ interface CompareData {
     cabinType?: string;
     dealScore?: number;
     perks?: string[];
+    perksRaw?: string[];
     url?: string;
   }>;
 }

@@ -3,6 +3,16 @@ import { z } from 'zod';
 import * as queries from '@/lib/db/queries';
 import { dealIdsSchema } from './schemas';
 
+function parseStringList(value: string | null | undefined): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
 export const compareCruises = tool({
   description:
     '对比多个邮轮航线，生成并排对比数据，方便用户直观比较价格、行程、设施等信息。',
@@ -11,7 +21,7 @@ export const compareCruises = tool({
   }),
   execute: async ({ dealIds }) => {
     const deals = dealIds
-      .map((id) => queries.getDealById(id))
+      .map((id) => queries.getDealById(id, 'zh-CN'))
       .filter(Boolean);
 
     if (deals.length < 2) {
@@ -21,11 +31,21 @@ export const compareCruises = tool({
     return {
       deals: deals.map((deal) => ({
         id: deal!.id,
-        brand: deal!.brand_name_cn || deal!.brand_name,
+        brand:
+          deal!.brand_short_name_display ||
+          deal!.brand_name_display ||
+          deal!.brand_name_cn ||
+          deal!.brand_name,
+        brandRaw: deal!.brand_name,
         dealName: deal!.deal_name,
-        shipName: deal!.ship_name,
-        destination: deal!.destination,
-        departurePort: deal!.departure_port,
+        shipName: deal!.ship_name_display || deal!.ship_name,
+        shipNameRaw: deal!.ship_name,
+        destination: deal!.destination_display || deal!.destination,
+        destinationRaw: deal!.destination,
+        destinationId: deal!.destination_id || deal!.primary_destination_term_id,
+        departurePort: deal!.departure_port_display || deal!.departure_port,
+        departurePortRaw: deal!.departure_port,
+        departurePortId: deal!.departure_port_id,
         duration: `${deal!.duration_nights}晚${deal!.duration_days}天`,
         sailDate: deal!.sail_date,
         price: deal!.price,
@@ -37,7 +57,8 @@ export const compareCruises = tool({
           : null,
         cabinType: deal!.cabin_type,
         dealScore: deal!.deal_score,
-        perks: deal!.perks ? JSON.parse(deal!.perks) : [],
+        perks: parseStringList(deal!.perks_display || deal!.perks),
+        perksRaw: parseStringList(deal!.perks_raw || deal!.perks),
         url: deal!.deal_url,
       })),
     };

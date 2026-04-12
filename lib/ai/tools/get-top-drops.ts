@@ -3,6 +3,16 @@ import { z } from 'zod';
 import * as queries from '@/lib/db/queries';
 import { tierSchema, normalizeTier } from './schemas';
 
+function parseStringList(value: string | null | undefined): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
 export const getTopPriceDrops = tool({
   description:
     '获取降价幅度最大的航线，按降价百分比排序。适合寻找近期大幅降价的航线。注意：这个工具只返回有降价记录的航线，不等于"最便宜的航线"。',
@@ -17,6 +27,7 @@ export const getTopPriceDrops = tool({
       brand: params.brand,
       tier: tierArr,
       limit: params.limit,
+      locale: 'zh-CN',
     });
 
     if (drops.length === 0) {
@@ -24,6 +35,7 @@ export const getTopPriceDrops = tool({
       const fallback = queries.getHotDealsByTier({
         tier: tierArr,
         limit: params.limit || 15,
+        locale: 'zh-CN',
       });
 
       return {
@@ -32,12 +44,16 @@ export const getTopPriceDrops = tool({
         message: '暂无价格变动数据（需多轮爬取积累），已按 deal_score（折扣深度）排序推荐替代。',
         deals: fallback.map((d) => ({
           id: d.id,
-          brand: d.brand_name_cn || d.brand_name || d.brand_id,
+          brand: d.brand_short_name_display || d.brand_name_display || d.brand_name_cn || d.brand_name || d.brand_id,
+          brandRaw: d.brand_name || d.brand_id,
           brandId: d.brand_id,
           brandTier: d.brand_tier,
           dealName: d.deal_name,
-          shipName: d.ship_name,
-          destination: d.destination,
+          shipName: d.ship_name_display || d.ship_name,
+          shipNameRaw: d.ship_name,
+          destination: d.destination_display || d.destination,
+          destinationRaw: d.destination,
+          destinationId: d.destination_id || d.primary_destination_term_id,
           price: d.price,
           currency: d.price_currency,
           priceOriginal: d.price_original,
@@ -48,7 +64,8 @@ export const getTopPriceDrops = tool({
           sailDate: d.sail_date,
           priceTrend: d.price_trend,
           dealUrl: d.deal_url,
-          perks: d.perks ? JSON.parse(d.perks) : [],
+          perks: parseStringList(d.perks_display || d.perks),
+          perksRaw: parseStringList(d.perks_raw || d.perks),
         })),
       };
     }
@@ -57,12 +74,16 @@ export const getTopPriceDrops = tool({
       count: drops.length,
       deals: drops.map((d) => ({
         id: d.id,
-        brand: d.brand_name_cn || d.brand_name || d.brand_id,
+        brand: d.brand_short_name_display || d.brand_name_display || d.brand_name_cn || d.brand_name || d.brand_id,
+        brandRaw: d.brand_name || d.brand_id,
         brandId: d.brand_id,
         brandTier: d.brand_tier,
         dealName: d.deal_name,
-        shipName: d.ship_name,
-        destination: d.destination,
+        shipName: d.ship_name_display || d.ship_name,
+        shipNameRaw: d.ship_name,
+        destination: d.destination_display || d.destination,
+        destinationRaw: d.destination,
+        destinationId: d.destination_id || d.primary_destination_term_id,
         price: d.price,
         currency: d.price_currency,
         priceHighest: d.price_highest,
@@ -74,7 +95,8 @@ export const getTopPriceDrops = tool({
         sailDate: d.sail_date,
         priceTrend: d.price_trend,
         dealUrl: d.deal_url,
-        perks: d.perks ? JSON.parse(d.perks) : [],
+        perks: parseStringList(d.perks_display || d.perks),
+        perksRaw: parseStringList(d.perks_raw || d.perks),
       })),
     };
   },

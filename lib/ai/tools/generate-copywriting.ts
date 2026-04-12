@@ -3,6 +3,16 @@ import { z } from 'zod';
 import * as queries from '@/lib/db/queries';
 import { dealIdSchema } from './schemas';
 
+function parseStringList(value: string | null | undefined): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
 export const generateCopywriting = tool({
   description:
     '根据指定航线生成小红书种草文案。工具会获取航线详情，AI 会根据数据生成吸引人的中文推广文案。',
@@ -18,17 +28,17 @@ export const generateCopywriting = tool({
       .describe('需要强调的卖点，如 "亲子"、"蜜月"、"性价比"'),
   }),
   execute: async ({ dealId, style, highlights }) => {
-    const deal = queries.getDealById(dealId);
+    const deal = queries.getDealById(dealId, 'zh-CN');
     if (!deal) {
       return { error: '未找到该航线，请确认传入的是上一工具返回的字符串 dealId。' };
     }
 
-    const perks = deal.perks ? JSON.parse(deal.perks) : [];
+    const perks = parseStringList(deal.perks_display || deal.perks);
 
     // 获取该品牌同目的地均价，用于对比
     const stats = queries.getPriceStats({
-      brand: deal.brand_name ?? undefined,
-      destination: deal.destination ?? undefined,
+      brand: deal.brand_id,
+      destinationId: deal.destination_id || deal.primary_destination_term_id || undefined,
     });
     const overallStats = stats.overall[0] as
       | { avg_price: number; min_price: number }
@@ -36,11 +46,20 @@ export const generateCopywriting = tool({
 
     return {
       deal: {
-        brand: deal.brand_name_cn || deal.brand_name,
+        brand:
+          deal.brand_short_name_display ||
+          deal.brand_name_display ||
+          deal.brand_name_cn ||
+          deal.brand_name,
+        brandRaw: deal.brand_name,
         dealName: deal.deal_name,
-        shipName: deal.ship_name,
-        destination: deal.destination,
-        departurePort: deal.departure_port,
+        shipName: deal.ship_name_display || deal.ship_name,
+        shipNameRaw: deal.ship_name,
+        destination: deal.destination_display || deal.destination,
+        destinationRaw: deal.destination,
+        destinationId: deal.destination_id || deal.primary_destination_term_id,
+        departurePort: deal.departure_port_display || deal.departure_port,
+        departurePortRaw: deal.departure_port,
         duration: `${deal.duration_nights}晚${deal.duration_days}天`,
         sailDate: deal.sail_date,
         price: deal.price,

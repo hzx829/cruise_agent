@@ -7,7 +7,8 @@ export const analyzePrices = tool({
     '分析价格数据。返回统计信息（最低价、最高价、均价）和价格区间分布。可按品牌或目的地筛选。',
   inputSchema: z.object({
     brand: z.string().optional().describe('按品牌筛选'),
-    destination: z.string().optional().describe('按目的地筛选'),
+    destination: z.string().optional().describe('按目的地文本筛选，可传中文或英文'),
+    destinationId: z.string().optional().describe('规范化目的地 ID，来自 listDestinations'),
   }),
   execute: async (params) => {
     const stats = queries.getPriceStats(params);

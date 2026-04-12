@@ -10,15 +10,25 @@ export const getPriceHistory = tool({
     dealId: dealIdSchema,
   }),
   execute: async ({ dealId }) => {
-    const deal = queries.getDealById(dealId);
+    const deal = queries.getDealById(dealId, 'zh-CN');
     const history = queries.getPriceHistory(dealId);
 
     return {
       deal: deal
         ? {
             id: deal.id,
-            brand: deal.brand_name_cn || deal.brand_name || deal.brand_id,
+            brand:
+              deal.brand_short_name_display ||
+              deal.brand_name_display ||
+              deal.brand_name_cn ||
+              deal.brand_name ||
+              deal.brand_id,
+            brandRaw: deal.brand_name || deal.brand_id,
             dealName: deal.deal_name,
+            shipName: deal.ship_name_display || deal.ship_name,
+            destination: deal.destination_display || deal.destination,
+            destinationRaw: deal.destination,
+            destinationId: deal.destination_id || deal.primary_destination_term_id,
             currentPrice: deal.price,
             currency: deal.price_currency,
             priceLowest: deal.price_lowest,

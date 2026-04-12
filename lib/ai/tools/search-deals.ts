@@ -4,6 +4,16 @@ import * as queries from '@/lib/db/queries';
 import { buildRouteLabel, getRouteEndpoints } from '@/lib/cruise/search-utils';
 import { tierSchema } from './schemas';
 
+function parseStringList(value: string | null | undefined): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
 export const searchDeals = tool({
   description:
     '搜索邮轮特价航线。支持按品牌、目的地、出发港、到达港、经停港、是否往返、航区、价格范围、出发日期、航行天数、舱位类型、价格趋势、品牌层级等筛选。默认按同一航次聚合，只返回该航次最低起价；若指定 cabinType，则返回该房型在每个航次的价格。',
@@ -15,7 +25,11 @@ export const searchDeals = tool({
     destination: z
       .string()
       .optional()
-      .describe('目的地名称，如 Caribbean, Alaska, Hawaii'),
+      .describe('目的地名称，可传中文、英文或官网原文；能确定 destinationId 时优先传 destinationId'),
+    destinationId: z
+      .string()
+      .optional()
+      .describe('规范化目的地 ID，来自 listDestinations 返回的 id；比 destination 文本更准确'),
     departurePort: z
       .string()
       .optional()
@@ -72,6 +86,7 @@ export const searchDeals = tool({
   execute: async (params) => {
     const result = queries.searchDeals({
       ...params,
+      locale: 'zh-CN',
       limit: Math.min(params.limit || 20, 50),
     });
 
@@ -85,18 +100,24 @@ export const searchDeals = tool({
 
         return {
           id: d.id,
-          brand: d.brand_name_cn || d.brand_name || d.brand_id,
+          brandRaw: d.brand_name || d.brand_id,
+          brand: d.brand_short_name_display || d.brand_name_display || d.brand_name_cn || d.brand_name || d.brand_id,
           brandId: d.brand_id,
           brandTier: d.brand_tier,
           dealName: d.deal_name,
-          shipName: d.ship_name,
-          departurePort: d.departure_port,
+          shipName: d.ship_name_display || d.ship_name,
+          shipNameRaw: d.ship_name,
+          departurePort: d.departure_port_display || d.departure_port,
+          departurePortRaw: d.departure_port,
+          departurePortId: d.departure_port_id,
           arrivalPort: endPort,
           routeStartPort: startPort,
           routeEndPort: endPort,
           routeLabel,
           routeType,
-          destination: d.destination,
+          destination: d.destination_display || d.destination,
+          destinationRaw: d.destination,
+          destinationId: d.destination_id || d.primary_destination_term_id,
           itinerary: d.itinerary,
           durationDays: d.duration_days,
           price: d.price,
@@ -107,7 +128,8 @@ export const searchDeals = tool({
           currency: d.price_currency,
           cabinType: d.cabin_type,
           sailDate: d.sail_date,
-          perks: d.perks ? JSON.parse(d.perks) : [],
+          perks: parseStringList(d.perks_display || d.perks),
+          perksRaw: parseStringList(d.perks_raw || d.perks),
           dealUrl: d.deal_url,
           dealScore: d.deal_score,
           priceTrend: d.price_trend,

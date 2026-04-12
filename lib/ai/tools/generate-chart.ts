@@ -15,7 +15,8 @@ export const generateChart = tool({
       ])
       .describe('图表类型'),
     brand: z.string().optional().describe('按品牌筛选'),
-    destination: z.string().optional().describe('按目的地筛选'),
+    destination: z.string().optional().describe('按目的地文本筛选，可传中文或英文'),
+    destinationId: z.string().optional().describe('规范化目的地 ID，来自 listDestinations'),
   }),
   execute: async (params) => {
     switch (params.chartType) {
@@ -32,13 +33,14 @@ export const generateChart = tool({
           data: queries.getPriceDistribution({
             brand: params.brand,
             destination: params.destination,
+            destinationId: params.destinationId,
           }),
         };
       case 'destination_overview':
         return {
           chartType: 'bar' as const,
           title: '热门目的地',
-          data: queries.getDestinations().slice(0, 15),
+          data: queries.getDestinations('zh-CN').slice(0, 15),
         };
       case 'duration_price':
         return {
@@ -47,6 +49,7 @@ export const generateChart = tool({
           data: queries.getDurationPriceData({
             brand: params.brand,
             destination: params.destination,
+            destinationId: params.destinationId,
           }),
         };
     }

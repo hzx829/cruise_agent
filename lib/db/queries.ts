@@ -19,15 +19,164 @@ import {
   matchesRouteRegion,
 } from '@/lib/cruise/search-utils';
 
+const DEFAULT_LOCALE = 'zh-CN';
+
+function normalizeLocale(locale?: string): 'zh-CN' | 'en' {
+  if (!locale) return DEFAULT_LOCALE;
+  return locale.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en';
+}
+
+function quoteSqlLiteral(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function localizedDealJoins(locale?: string): string {
+  const localeSql = quoteSqlLiteral(normalizeLocale(locale));
+
+  return `
+    LEFT JOIN brands b ON d.brand_id = b.id
+    LEFT JOIN brand_translations bt_locale
+      ON bt_locale.brand_id = b.id AND bt_locale.locale = ${localeSql}
+    LEFT JOIN ships s ON d.ship_id = s.id
+    LEFT JOIN ship_translations st_locale
+      ON st_locale.ship_id = s.id AND st_locale.locale = ${localeSql}
+    LEFT JOIN ship_translations st_en
+      ON st_en.ship_id = s.id AND st_en.locale = 'en'
+    LEFT JOIN ports p ON d.departure_port_id = p.id
+    LEFT JOIN port_translations pt_locale
+      ON pt_locale.port_id = p.id AND pt_locale.locale = ${localeSql}
+    LEFT JOIN port_translations pt_en
+      ON pt_en.port_id = p.id AND pt_en.locale = 'en'
+    LEFT JOIN terms t ON d.primary_destination_term_id = t.id
+    LEFT JOIN term_translations tt_locale
+      ON tt_locale.term_id = t.id AND tt_locale.locale = ${localeSql}
+    LEFT JOIN term_translations tt_en
+      ON tt_en.term_id = t.id AND tt_en.locale = 'en'
+  `;
+}
+
+function localizedDealSelect(): string {
+  return `
+    d.*,
+    b.name AS brand_name,
+    b.name_cn AS brand_name_cn,
+    b.tier AS brand_tier,
+    COALESCE(bt_locale.name, b.name_cn, b.name) AS brand_name_display,
+    COALESCE(bt_locale.short_name, bt_locale.name, b.name_cn, b.name) AS brand_short_name_display,
+    COALESCE(st_locale.name, st_en.name, s.canonical_name, d.ship_name) AS ship_name_display,
+    COALESCE(pt_locale.name, pt_en.name, p.canonical_name, d.departure_port) AS departure_port_display,
+    COALESCE(tt_locale.name, tt_en.name, t.canonical_name, d.destination) AS destination_display,
+    d.primary_destination_term_id AS destination_id
+  `;
+}
+
+function parseStringArray(value: string | null | undefined): string[] {
+  if (!value) return [];
+
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed)
+      ? parsed.map((item) => String(item).trim()).filter(Boolean)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function attachPerksDisplay<T extends DealRow | TopDrop>(
+  deals: T[],
+  locale?: string
+): T[] {
+  if (deals.length === 0) return deals;
+
+  const db = getDb();
+  const dealIds = deals.map((deal) => deal.id);
+  const placeholders = dealIds.map(() => '?').join(',');
+  const localeSql = quoteSqlLiteral(normalizeLocale(locale));
+
+  const rows = db
+    .prepare(
+      `SELECT dt.deal_id,
+              COALESCE(tt_locale.name, tt_en.name, t.canonical_name) AS display_name,
+              t.canonical_name AS raw_name
+       FROM deal_tags dt
+       JOIN terms t ON dt.term_id = t.id
+       LEFT JOIN term_translations tt_locale
+         ON tt_locale.term_id = t.id AND tt_locale.locale = ${localeSql}
+       LEFT JOIN term_translations tt_en
+         ON tt_en.term_id = t.id AND tt_en.locale = 'en'
+       WHERE dt.deal_id IN (${placeholders})
+       ORDER BY dt.id`
+    )
+    .all(...dealIds) as {
+    deal_id: string;
+    display_name: string | null;
+    raw_name: string | null;
+  }[];
+
+  const byDeal = new Map<string, { display: string[]; raw: string[] }>();
+  for (const row of rows) {
+    const entry = byDeal.get(row.deal_id) ?? { display: [], raw: [] };
+    if (row.display_name) entry.display.push(row.display_name);
+    if (row.raw_name) entry.raw.push(row.raw_name);
+    byDeal.set(row.deal_id, entry);
+  }
+
+  for (const deal of deals) {
+    const rawPerks = parseStringArray(deal.perks);
+    const linked = byDeal.get(deal.id);
+    const displayPerks = linked?.display.length ? linked.display : rawPerks;
+    const canonicalPerks = linked?.raw.length ? linked.raw : rawPerks;
+    deal.perks_display = JSON.stringify(displayPerks);
+    deal.perks_raw = JSON.stringify(canonicalPerks);
+  }
+
+  return deals;
+}
+
+function addDestinationFilter(
+  conditions: string[],
+  params: (string | number)[],
+  filters?: { destination?: string; destinationId?: string },
+  tableAlias?: string
+) {
+  const prefix = tableAlias ? `${tableAlias}.` : '';
+
+  if (filters?.destinationId) {
+    conditions.push(`${prefix}primary_destination_term_id = ?`);
+    params.push(filters.destinationId);
+    return;
+  }
+
+  if (!filters?.destination) return;
+
+  conditions.push(`(
+    ${prefix}destination LIKE ?
+    OR EXISTS (
+      SELECT 1 FROM terms destination_term
+      WHERE destination_term.id = ${prefix}primary_destination_term_id
+        AND destination_term.canonical_name LIKE ?
+    )
+    OR EXISTS (
+      SELECT 1 FROM term_translations destination_translation
+      WHERE destination_translation.term_id = ${prefix}primary_destination_term_id
+        AND destination_translation.name LIKE ?
+    )
+  )`);
+  params.push(`%${filters.destination}%`);
+  params.push(`%${filters.destination}%`);
+  params.push(`%${filters.destination}%`);
+}
+
 // ─── Deal 查询 ──────────────────────────────────────────
 
 function buildSailingKey(deal: DealRow): string {
   return [
     deal.brand_id,
     deal.deal_name ?? '',
-    deal.ship_name ?? '',
-    deal.departure_port ?? '',
-    deal.destination ?? '',
+    deal.ship_id ?? deal.ship_name ?? '',
+    deal.departure_port_id ?? deal.departure_port ?? '',
+    deal.primary_destination_term_id ?? deal.destination ?? '',
     deal.itinerary ?? '',
     deal.duration_days ?? '',
     deal.sail_date ?? '',
@@ -127,28 +276,37 @@ function matchesAdvancedFilters(deal: DealRow, filters: SearchFilters): boolean 
   return true;
 }
 
-function buildSearchSql(where: string, groupedBySailing: boolean): string {
+function buildSearchSql(
+  where: string,
+  groupedBySailing: boolean,
+  locale?: string
+): string {
+  const joins = localizedDealJoins(locale);
+  const selectColumns = localizedDealSelect();
+
   if (!groupedBySailing) {
     return `
-      SELECT d.*, b.name AS brand_name, b.name_cn AS brand_name_cn, b.tier AS brand_tier
+      SELECT ${selectColumns}
       FROM deals d
-      LEFT JOIN brands b ON d.brand_id = b.id
+      ${joins}
       ${where}
     `;
   }
 
   return `
     WITH ranked AS (
-      SELECT d.*, b.name AS brand_name, b.name_cn AS brand_name_cn, b.tier AS brand_tier,
+      SELECT ${selectColumns},
              ROW_NUMBER() OVER (
-               PARTITION BY d.brand_id, COALESCE(d.deal_name, ''), COALESCE(d.ship_name, ''),
-                            COALESCE(d.departure_port, ''), COALESCE(d.destination, ''),
+               PARTITION BY d.brand_id, COALESCE(d.deal_name, ''),
+                            COALESCE(d.ship_id, d.ship_name, ''),
+                            COALESCE(d.departure_port_id, d.departure_port, ''),
+                            COALESCE(d.primary_destination_term_id, d.destination, ''),
                             COALESCE(d.itinerary, ''), COALESCE(d.duration_days, -1),
                             COALESCE(d.sail_date, ''), COALESCE(d.sail_date_end, '')
                ORDER BY d.price ASC, COALESCE(d.cabin_type, '')
              ) AS sailing_rank
       FROM deals d
-      LEFT JOIN brands b ON d.brand_id = b.id
+      ${joins}
       ${where}
     )
     SELECT * FROM ranked
@@ -165,10 +323,7 @@ export function searchDeals(filters: SearchFilters): SearchDealsResult {
     conditions.push('d.brand_id = ?');
     params.push(filters.brand);
   }
-  if (filters.destination) {
-    conditions.push('d.destination LIKE ?');
-    params.push(`%${filters.destination}%`);
-  }
+  addDestinationFilter(conditions, params, filters, 'd');
   if (filters.priceMin != null) {
     conditions.push('d.price >= ?');
     params.push(filters.priceMin);
@@ -210,7 +365,7 @@ export function searchDeals(filters: SearchFilters): SearchDealsResult {
   const where = 'WHERE ' + conditions.join(' AND ');
   const limit = Math.min(filters.limit || 20, 50);
   const groupedBySailing = !filters.cabinType;
-  const sql = buildSearchSql(where, groupedBySailing);
+  const sql = buildSearchSql(where, groupedBySailing, filters.locale);
 
   const baseDeals = db.prepare(sql).all(...params) as DealRow[];
   const advancedFiltered = baseDeals.filter((deal) =>
@@ -220,22 +375,29 @@ export function searchDeals(filters: SearchFilters): SearchDealsResult {
     ? advancedFiltered
     : pickCheapestBySailing(advancedFiltered);
   const sortedDeals = sortDeals(dedupedDeals, filters);
+  const pageDeals = attachPerksDisplay(
+    sortedDeals.slice(0, limit),
+    filters.locale
+  );
 
   return {
     totalMatches: sortedDeals.length,
-    deals: sortedDeals.slice(0, limit),
+    deals: pageDeals,
   };
 }
 
-export function getDealById(dealId: string): DealRow | undefined {
+export function getDealById(dealId: string, locale?: string): DealRow | undefined {
   const db = getDb();
-  return db
+  const deal = db
     .prepare(
-      `SELECT d.*, b.name AS brand_name, b.name_cn AS brand_name_cn, b.tier AS brand_tier
-       FROM deals d LEFT JOIN brands b ON d.brand_id = b.id
+      `SELECT ${localizedDealSelect()}
+       FROM deals d
+       ${localizedDealJoins(locale)}
        WHERE d.id = ?`
     )
     .get(dealId) as DealRow | undefined;
+
+  return deal ? attachPerksDisplay([deal], locale)[0] : undefined;
 }
 
 // ─── Brand 查询 ─────────────────────────────────────────
@@ -247,17 +409,20 @@ export function getBrands(): BrandRow[] {
     .all() as BrandRow[];
 }
 
-export function getBrandSummary(): BrandSummary[] {
+export function getBrandSummary(locale?: string): BrandSummary[] {
   const db = getDb();
+  const localeSql = quoteSqlLiteral(normalizeLocale(locale));
   return db
     .prepare(
-      `SELECT b.id, b.name, b.name_cn, b.brand_group,
+      `SELECT b.id, b.name, COALESCE(bt.name, b.name_cn) AS name_cn, b.brand_group,
               COUNT(d.id) AS deal_count,
               MIN(d.price) AS min_price,
               ROUND(AVG(d.price), 0) AS avg_price,
               MAX(d.price) AS max_price,
               d.price_currency AS currency
        FROM brands b
+       LEFT JOIN brand_translations bt
+         ON bt.brand_id = b.id AND bt.locale = ${localeSql}
        LEFT JOIN deals d ON b.id = d.brand_id AND d.price > 0
        GROUP BY b.id
        HAVING deal_count > 0
@@ -267,16 +432,19 @@ export function getBrandSummary(): BrandSummary[] {
 }
 
 /** 查询有实际 deal 数据的品牌及其统计信息（用于动态组装 prompt） */
-export function getActiveBrandsStats(): ActiveBrandInfo[] {
+export function getActiveBrandsStats(locale?: string): ActiveBrandInfo[] {
   const db = getDb();
+  const localeSql = quoteSqlLiteral(normalizeLocale(locale));
   return db
     .prepare(
-      `SELECT b.id, b.name, b.name_cn, b.tier,
+      `SELECT b.id, b.name, COALESCE(bt.name, b.name_cn) AS name_cn, b.tier,
               d.price_currency AS currency,
               COUNT(d.id) AS deal_count,
               SUM(CASE WHEN d.deal_score > 0 THEN 1 ELSE 0 END) AS scored_count,
               GROUP_CONCAT(DISTINCT d.cabin_type) AS cabin_types
        FROM brands b
+       LEFT JOIN brand_translations bt
+         ON bt.brand_id = b.id AND bt.locale = ${localeSql}
        JOIN deals d ON b.id = d.brand_id AND d.price > 0
        GROUP BY b.id
        ORDER BY b.tier, deal_count DESC`
@@ -286,15 +454,28 @@ export function getActiveBrandsStats(): ActiveBrandInfo[] {
 
 // ─── 目的地 ─────────────────────────────────────────────
 
-export function getDestinations(): DestinationSummary[] {
+export function getDestinations(locale?: string): DestinationSummary[] {
   const db = getDb();
+  const localeSql = quoteSqlLiteral(normalizeLocale(locale));
   return db
     .prepare(
-      `SELECT destination, COUNT(*) AS count,
-              MIN(price) AS min_price, ROUND(AVG(price), 0) AS avg_price
-       FROM deals
-       WHERE destination IS NOT NULL AND destination != '' AND price > 0
-       GROUP BY destination
+      `SELECT t.id,
+              COALESCE(tt_locale.name, tt_en.name, t.canonical_name) AS name,
+              t.canonical_name,
+              COALESCE(tt_locale.name, tt_en.name, t.canonical_name) AS destination,
+              COUNT(*) AS count,
+              MIN(d.price) AS min_price,
+              ROUND(AVG(d.price), 0) AS avg_price
+       FROM deals d
+       JOIN terms t
+         ON d.primary_destination_term_id = t.id
+        AND t.term_type = 'destination'
+       LEFT JOIN term_translations tt_locale
+         ON tt_locale.term_id = t.id AND tt_locale.locale = ${localeSql}
+       LEFT JOIN term_translations tt_en
+         ON tt_en.term_id = t.id AND tt_en.locale = 'en'
+       WHERE d.price > 0
+       GROUP BY t.id
        ORDER BY count DESC`
     )
     .all() as DestinationSummary[];
@@ -316,19 +497,20 @@ export function getCabinTypes(): { cabin_type: string; count: number }[] {
 
 // ─── 价格分析 ───────────────────────────────────────────
 
-export function getPriceStats(filters?: { brand?: string; destination?: string }) {
+export function getPriceStats(filters?: {
+  brand?: string;
+  destination?: string;
+  destinationId?: string;
+}) {
   const db = getDb();
   const conditions: string[] = ['price > 0'];
-  const params: string[] = [];
+  const params: (string | number)[] = [];
 
   if (filters?.brand) {
     conditions.push('brand_id = ?');
     params.push(filters.brand);
   }
-  if (filters?.destination) {
-    conditions.push('destination LIKE ?');
-    params.push(`%${filters.destination}%`);
-  }
+  addDestinationFilter(conditions, params, filters);
 
   const where = 'WHERE ' + conditions.join(' AND ');
 
@@ -350,19 +532,17 @@ export function getPriceStats(filters?: { brand?: string; destination?: string }
 export function getPriceDistribution(filters?: {
   brand?: string;
   destination?: string;
+  destinationId?: string;
 }) {
   const db = getDb();
   const conditions: string[] = ['price > 0'];
-  const params: string[] = [];
+  const params: (string | number)[] = [];
 
   if (filters?.brand) {
     conditions.push('brand_id = ?');
     params.push(filters.brand);
   }
-  if (filters?.destination) {
-    conditions.push('destination LIKE ?');
-    params.push(`%${filters.destination}%`);
-  }
+  addDestinationFilter(conditions, params, filters);
 
   const where = 'WHERE ' + conditions.join(' AND ');
 
@@ -406,22 +586,20 @@ export function getPriceHistory(dealId: string): PriceHistoryRow[] {
 export function getDurationPriceData(filters?: {
   brand?: string;
   destination?: string;
+  destinationId?: string;
 }) {
   const db = getDb();
   const conditions: string[] = [
     'price > 0',
     'duration_days IS NOT NULL',
   ];
-  const params: string[] = [];
+  const params: (string | number)[] = [];
 
   if (filters?.brand) {
     conditions.push('brand_id = ?');
     params.push(filters.brand);
   }
-  if (filters?.destination) {
-    conditions.push('destination LIKE ?');
-    params.push(`%${filters.destination}%`);
-  }
+  addDestinationFilter(conditions, params, filters);
 
   const where = 'WHERE ' + conditions.join(' AND ');
 
@@ -461,6 +639,7 @@ export function getTopPriceDrops(filters?: {
   brand?: string;
   tier?: string | string[];
   limit?: number;
+  locale?: string;
 }): TopDrop[] {
   const db = getDb();
   const conditions: string[] = [
@@ -483,21 +662,19 @@ export function getTopPriceDrops(filters?: {
   const where = 'WHERE ' + conditions.join(' AND ');
   const limit = Math.min(filters?.limit || 15, 50);
 
-  return db
+  const drops = db
     .prepare(
-      `SELECT d.id, d.brand_id, d.deal_name, d.ship_name, d.destination,
-              d.price, d.price_currency, d.price_highest, d.price_lowest,
-              d.deal_score, d.cabin_type, d.duration_days, d.sail_date,
-              d.price_trend, d.deal_url, d.perks,
-              ROUND((d.price_highest - d.price) * 100.0 / d.price_highest, 1) AS drop_pct,
-              b.name AS brand_name, b.name_cn AS brand_name_cn, b.tier AS brand_tier
+      `SELECT ${localizedDealSelect()},
+              ROUND((d.price_highest - d.price) * 100.0 / d.price_highest, 1) AS drop_pct
        FROM deals d
-       LEFT JOIN brands b ON d.brand_id = b.id
+       ${localizedDealJoins(filters?.locale)}
        ${where}
        ORDER BY drop_pct DESC
        LIMIT ?`
     )
     .all(...params, limit) as TopDrop[];
+
+  return attachPerksDisplay(drops, filters?.locale);
 }
 
 /** 按趋势统计 deal 数量 */
@@ -534,7 +711,7 @@ export function getTrackingOverview() {
     .get() as { cnt: number };
 
   const trends = getTrendStats();
-  const topDrops = getTopPriceDrops({ limit: 10 });
+  const topDrops = getTopPriceDrops({ limit: 10, locale: DEFAULT_LOCALE });
 
   return {
     tracked_deals: trackedDeals.cnt,
@@ -549,6 +726,7 @@ export function getTrackingOverview() {
 export function getHotDealsByTier(filters?: {
   tier?: string | string[];
   limit?: number;
+  locale?: string;
 }) {
   const db = getDb();
   const conditions: string[] = ['d.price > 0', 'd.deal_score > 0'];
@@ -563,16 +741,18 @@ export function getHotDealsByTier(filters?: {
   const where = 'WHERE ' + conditions.join(' AND ');
   const limit = Math.min(filters?.limit || 20, 50);
 
-  return db
+  const deals = db
     .prepare(
-      `SELECT d.*, b.name AS brand_name, b.name_cn AS brand_name_cn, b.tier AS brand_tier
+      `SELECT ${localizedDealSelect()}
        FROM deals d
-       LEFT JOIN brands b ON d.brand_id = b.id
+       ${localizedDealJoins(filters?.locale)}
        ${where}
        ORDER BY d.deal_score DESC
        LIMIT ?`
     )
     .all(...params, limit) as DealRow[];
+
+  return attachPerksDisplay(deals, filters?.locale);
 }
 
 /** 获取指定 deal 在各区域的价格 */
@@ -597,8 +777,9 @@ export function getRegionalPrices(dealId: string) {
 }
 
 /** 获取整体统计数据 */
-export function getOverallStats() {
+export function getOverallStats(locale?: string) {
   const db = getDb();
+  const localeSql = quoteSqlLiteral(normalizeLocale(locale));
 
   const totals = db
     .prepare(
@@ -619,10 +800,12 @@ export function getOverallStats() {
 
   const brandMins = db
     .prepare(
-      `SELECT d.brand_id, b.name_cn, b.name, b.tier,
+      `SELECT d.brand_id, COALESCE(bt.name, b.name_cn) AS name_cn, b.name, b.tier,
               MIN(d.price) AS min_price, d.price_currency AS currency
        FROM deals d
        LEFT JOIN brands b ON d.brand_id = b.id
+       LEFT JOIN brand_translations bt
+         ON bt.brand_id = b.id AND bt.locale = ${localeSql}
        WHERE d.price > 0
        GROUP BY d.brand_id
        ORDER BY min_price ASC`

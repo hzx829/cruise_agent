@@ -16,18 +16,24 @@ import {
 import { cn } from '@/lib/utils';
 
 interface DealData {
-  id: number;
+  id: string;
   brand: string;
+  brandRaw?: string;
   brandId?: string;
   dealName: string;
   shipName?: string;
+  shipNameRaw?: string;
   departurePort?: string;
+  departurePortRaw?: string;
+  departurePortId?: string | null;
   arrivalPort?: string;
   routeStartPort?: string;
   routeEndPort?: string;
   routeLabel?: string | null;
   routeType?: 'roundtrip' | 'open_jaw' | null;
   destination?: string;
+  destinationRaw?: string;
+  destinationId?: string | null;
   itinerary?: string;
   durationDays?: number;
   price: number;
@@ -37,6 +43,7 @@ interface DealData {
   cabinType?: string;
   sailDate?: string;
   perks?: string[];
+  perksRaw?: string[];
   dealUrl?: string;
   dealScore?: number;
   // Price tracking fields

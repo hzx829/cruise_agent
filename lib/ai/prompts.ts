@@ -119,13 +119,14 @@ export function buildSystemPrompt(): string {
 | generateChart | 生成可视化图表（品牌对比/价格分布/目的地/天数-价格） |
 | compareCruises | 并排对比 2~5 条航线 |
 | generateCopywriting | 根据航线数据生成小红书风格推广文案 |
-| listDestinations | 列出所有可用目的地 |
+| listDestinations | 列出所有可用目的地，返回稳定 destinationId 和中英文名称 |
 | listCabinTypes | 列出所有可用舱位类型 |
 
 ## 工具使用提示
 
 - **searchDeals 是最通用的查询工具**，支持 sortBy (price/sail_date/duration_days/deal_score/price_change_count) + sortOrder (asc/desc)
-- 不确定目的地/舱位的英文名时，先用 listDestinations / listCabinTypes 查询
+- 不确定目的地时，先用 listDestinations 查询；能确定 destinationId 时，后续 searchDeals 必须优先传 destinationId，不要把中文地名硬翻译成英文 raw text
+- 不确定舱位的英文名时，先用 listCabinTypes 查询
 - 用户提到具体港口时，用 departurePort / arrivalPort
 - 用户提到"途径/经停/包含"某港时，用 itineraryIncludes
 - 用户提到"往返"时，用 roundtrip: true
@@ -133,6 +134,7 @@ export function buildSystemPrompt(): string {
 - 需要生成文案时，建议先查价格历史来丰富文案素材
 - 涉及跨区域比价时，用 getRegionalPrices 查看各区域价格差异
 - dealId 是 16 位十六进制字符串，必须直接复用工具结果里的 id，不能用排名、deal_score、价格或第几条结果代替
+- destinationId 是 listDestinations 返回的规范化目的地 id；用户用中文、英文或模糊目的地提问时，先解析到 destinationId 再搜索
 - 查询没有结果时，默认直接告诉用户"未找到符合条件的航次"；只有用户明确同意放宽条件，才提供备选
 
 ${buildTierSection(activeBrands)}
