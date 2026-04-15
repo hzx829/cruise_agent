@@ -168,10 +168,89 @@ npm run dev
 
 ---
 
-## Phase 4: 待开始
+## Phase 6: 智能顾问升级 — 「查·比·学」三合一 ✅
 
-- [ ] 文案生成用 Claude 模型 (prepareStep 切换)
-- [ ] 数据导出 (Excel/PDF)
+> 设计文档：[agent-upgrade-design.md](agent-upgrade-design.md)
+
+### 背景
+
+从「纯价格搬运工」升级为「智能邮轮顾问」，新增 Web 搜索能力，实现价格/知识/创作三大能力分区。
+
+### 已完成
+
+#### 新增 AI 工具（2 个，总计 16 个）
+
+- [lib/ai/tools/web-search.ts](lib/ai/tools/web-search.ts) — 🌐 Tavily 通用网络搜索（工具 description 中禁止用于查询价格）
+- [lib/ai/tools/cruise-encyclopedia.ts](lib/ai/tools/cruise-encyclopedia.ts) — 📖 邮轮专业百科（限定 CruiseCritic / CruiseMapper / RoyalCaribbeanBlog 等权威站点）
+
+#### Agent 架构升级
+
+- [lib/ai/agent.ts](lib/ai/agent.ts) — 新增 `createCruiseAgent()` 工厂函数：
+  - 使用 `ToolLoopAgent`（AI SDK v6 原生 Agent 架构）
+  - `stopWhen: stepCountIs(8)` 支持更复杂的多步推理
+  - 全部 16 个工具按分类注册
+  - `onStepFinish` 开发日志（打印每步 tool 调用和 token 用量）
+
+#### API Route 重构
+
+- [app/api/chat/route.ts](app/api/chat/route.ts) — 替换 `streamText` 为 `createAgentUIStreamResponse`：
+  - 移除 14 个独立 tool 导入，改为 `createCruiseAgent(model)` 一行
+  - 完整保留消息持久化逻辑（loadChat / saveMessages / createChat / updateChatTitle）
+  - `onFinish` 回调用于持久化 AI 回复 + 首条消息生成标题
+  - 增加历史消息空 parts 过滤（防止旧数据触发 ZodError）
+
+#### System Prompt 重构
+
+- [lib/ai/prompts.ts](lib/ai/prompts.ts) — `buildSystemPrompt()` 全面重写：
+  - **新身份**：「游速达智能邮轮顾问，能查价格、讲评测、写文案、解惑答疑」
+  - **4 条路由规则**（核心变化）：
+    - 规则 1：价格类 → DB 工具，严禁 webSearch 查价格
+    - 规则 2：知识类 → webSearch / cruiseEncyclopedia
+    - 规则 3：混合类 → 先 DB 后搜索，分别标注来源
+    - 规则 4：文案类 → DB 数据 + 可选搜索 + generateCopywriting
+  - **工具表格**拆分为三栏：🔒 价格类 / 🌐 知识类 / ✍️ 创作类
+  - **回答格式**规范：`📡 官网实时数据` vs `🌐 网络信息` 标注
+
+#### 前端升级
+
+- [components/chat.tsx](components/chat.tsx) — 快捷操作升级为「查·比·学」四按钮：
+  - `⚓ 价格巡航` — 触发 DB 降价查询
+  - `📊 品牌测评` — 触发 Web 搜索品牌对比
+  - `📖 行业百科` — 触发 Web 搜索邮轮术语
+  - `✍️ 爆款文案` — 触发 DB + 文案生成
+  - 欢迎语更新为「游速达邮轮顾问」
+
+#### 环境变量
+
+- `.env.local` — 新增 `TAVILY_API_KEY=`（placeholder，需填入真实 key）
+
+#### Bug 修复
+
+- `lib/db/chat-store.ts` `loadChat()` — 过滤 `parts.length === 0` 的旧格式消息
+- `app/api/chat/route.ts` — 拼接 `allMessages` 前增加防御性过滤
+
+### 技术决策
+
+- **Tavily vs SearXNG**：选 Tavily 免费层（1000 次/月），无需自建服务器
+- **ToolLoopAgent vs 手动 streamText**：ToolLoopAgent 统一管理工具循环/停止条件，代码更简洁
+- **cruiseEncyclopedia 独立工具**：固定限定搜索域，比 webSearch + includeDomains 参数更稳定
+
+### 工具总览（16 个）
+
+| 分类 | 数量 | 工具 |
+|------|------|------|
+| 🔒 价格类（DB） | 12 | searchDeals / getTopPriceDrops / getHotDeals / getPriceHistory / getRegionalPrices / compareCruises / getStats / getBrandOverview / analyzePrices / getTrackingOverview / listDestinations / listCabinTypes |
+| 🌐 知识类（Web） | 2 | webSearch / cruiseEncyclopedia |
+| ✍️ 创作类 | 2 | generateCopywriting / generateChart |
+
+---
+
+## Phase 4: 待规划
+
+- [ ] 搜索结果缓存（减少 Tavily API 调用次数）
+- [ ] 工具调用监控仪表盘
+- [ ] 文案生成用更强模型（prepareStep 动态切换）
+- [ ] 数据导出（Excel/PDF）
 - [ ] 海报生成
 
 ---

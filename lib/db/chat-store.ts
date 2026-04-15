@@ -94,11 +94,14 @@ export function loadChat(id: string): { title: string; messages: UIMessage[] } {
 
   const rows = stmtGetMessages.all(id) as MessageRow[];
 
-  const messages: UIMessage[] = rows.map((row) => ({
-    id: row.id,
-    role: row.role as UIMessage['role'],
-    parts: JSON.parse(row.parts_json),
-  }));
+  const messages: UIMessage[] = rows
+    .map((row) => ({
+      id: row.id,
+      role: row.role as UIMessage['role'],
+      parts: JSON.parse(row.parts_json) as UIMessage['parts'],
+    }))
+    // createAgentUIStreamResponse 要求每条消息至少有一个 part
+    .filter((msg) => Array.isArray(msg.parts) && msg.parts.length > 0);
 
   return { title: chat.title, messages };
 }

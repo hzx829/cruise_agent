@@ -22,9 +22,22 @@ import { ChatHeader } from './chat-header';
 import { getChatHistoryPaginationKey } from './sidebar-history';
 
 const QUICK_ACTIONS = [
-  { label: '🔥 最大降价', text: '帮我找降价幅度最大的邮轮航线，特别是高端和奢华品牌的' },
-  { label: '💎 奢华特价', text: '搜索奢华和高端品牌(luxury/premium)中 deal_score 最高的航线' },
-  { label: '✍️ 爆款文案', text: '找一个降价最多的航线，帮我生成小红书推广文案' },
+  {
+    label: '⚓ 价格巡航',
+    text: '帮我找降价幅度最大的邮轮航线，特别关注高端和奢华品牌',
+  },
+  {
+    label: '📊 品牌测评',
+    text: '帮我对比一下皇家加勒比和诺唯真邮轮的优缺点，包括设施、餐饮、适合人群',
+  },
+  {
+    label: '📖 行业百科',
+    text: '邮轮行业有哪些新手需要了解的常用术语？比如阳台房、套房礼遇、离港税、服务费这些',
+  },
+  {
+    label: '✍️ 爆款文案',
+    text: '找一个降价幅度最大的航线，帮我生成小红书推广文案',
+  },
 ];
 
 interface ChatProps {
@@ -137,10 +150,10 @@ export function Chat({ id, initialMessages }: ChatProps) {
                   <Ship className="size-8 text-primary" />
                 </div>
                 <h2 className="mb-2 text-xl font-semibold text-foreground">
-                  你好！我是邮轮特价助手 🚢
+                  你好！我是游速达邮轮顾问 🚢
                 </h2>
                 <p className="mb-8 max-w-md text-center text-sm text-muted-foreground">
-                  我能追踪全球邮轮价格变动，发现降价最多的航线，帮你生成有传播力的小红书内容。
+                  我能追踪官网实时价格、搜索品牌评测、解答行业知识，还能帮你生成小红书爆款文案。
                 </p>
                 <div className="grid w-full max-w-lg gap-2 sm:grid-cols-2">
                   {QUICK_ACTIONS.map((action) => (

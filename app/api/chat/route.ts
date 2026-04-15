@@ -1,30 +1,12 @@
 import {
-  streamText,
-  stepCountIs,
-  convertToModelMessages,
+  createAgentUIStreamResponse,
   createIdGenerator,
   type UIMessage,
 } from 'ai';
 import { createZhipu } from 'zhipu-ai-provider';
 import { createOpenAI } from '@ai-sdk/openai';
-import { buildSystemPrompt } from '@/lib/ai/prompts';
+import { createCruiseAgent } from '@/lib/ai/agent';
 import { loadChat, saveMessages, updateChatTitle, createChat } from '@/lib/db/chat-store';
-import {
-  searchDeals,
-  getBrandOverview,
-  analyzePrices,
-  getPriceHistory,
-  generateChart,
-  compareCruises,
-  generateCopywriting,
-  getTopPriceDrops,
-  getHotDeals,
-  getTrackingOverview,
-  listDestinations,
-  listCabinTypes,
-  getRegionalPrices,
-  getStats,
-} from '@/lib/ai/tools';
 
 export const maxDuration = 60;
 
@@ -72,41 +54,24 @@ export async function POST(req: Request) {
     // 首条消息 — 延迟创建 chat 记录
     createChat(id);
   }
-  const allMessages = [...previousMessages, message];
+  // 过滤掉 parts 为空的无效历史消息，避免 createAgentUIStreamResponse 报错
+  const validPreviousMessages = previousMessages.filter(
+    (m) => Array.isArray(m.parts) && m.parts.length > 0,
+  );
+  const allMessages = [...validPreviousMessages, message];
 
   // 立即保存用户消息
   saveMessages(id, [message]);
 
   const generateMessageId = createIdGenerator({ prefix: 'msg', size: 16 });
 
-  const result = streamText({
-    model: getModel(),
-    system: buildSystemPrompt(),
-    messages: await convertToModelMessages(allMessages),
-    tools: {
-      searchDeals,
-      getBrandOverview,
-      analyzePrices,
-      getPriceHistory,
-      generateChart,
-      compareCruises,
-      generateCopywriting,
-      getTopPriceDrops,
-      getHotDeals,
-      getTrackingOverview,
-      listDestinations,
-      listCabinTypes,
-      getRegionalPrices,
-      getStats,
-    },
-    stopWhen: stepCountIs(5),
-  });
+  // 使用 ToolLoopAgent 替代手动 streamText
+  // Agent 自动管理工具循环、上下文和停止条件
+  const agent = createCruiseAgent(getModel());
 
-  // 确保即使客户端断开也能完整消费流
-  result.consumeStream();
-
-  return result.toUIMessageStreamResponse({
-    originalMessages: allMessages,
+  return createAgentUIStreamResponse({
+    agent,
+    uiMessages: allMessages,
     generateMessageId,
     onFinish: async ({ messages: finishedMessages }) => {
       // 找出 AI 回复的新消息并保存
