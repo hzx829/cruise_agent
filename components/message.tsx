@@ -7,7 +7,7 @@ import { DealList } from './deal-card';
 import { PriceChart } from './price-chart';
 import { CompareTable } from './compare-table';
 import { CopywritingCard } from './copywriting-card';
-import { Ship, Loader2, TrendingDown, Flame, BarChart3, Brain, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react';
+import { Ship, Loader2, TrendingDown, BarChart3, Brain, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
 
@@ -139,7 +139,6 @@ export function Message({
             case 'tool-compareCruises':
             case 'tool-generateCopywriting':
             case 'tool-getTopPriceDrops':
-            case 'tool-getHotDeals':
             case 'tool-getTrackingOverview': {
               const toolName = part.type.replace('tool-', '');
 
@@ -215,7 +214,6 @@ function getToolLabel(toolName: string): string {
     compareCruises: '⚖️ 对比航线...',
     generateCopywriting: '✍️ 生成文案素材...',
     getTopPriceDrops: '🔥 搜索降价排行...',
-    getHotDeals: '💎 搜索热门特价...',
     getTrackingOverview: '📡 获取追踪概览...',
     listDestinations: '🗺️ 获取目的地列表...',
     listCabinTypes: '🚢 获取舱型列表...',
@@ -235,7 +233,6 @@ function getToolCompletedLabel(toolName: string): string {
     compareCruises: '已对比航线',
     generateCopywriting: '已生成文案素材',
     getTopPriceDrops: '已获取降价排行',
-    getHotDeals: '已获取热门特价',
     getTrackingOverview: '已获取追踪概览',
     listDestinations: '已获取目的地列表',
     listCabinTypes: '已获取舱型列表',
@@ -339,48 +336,11 @@ function ToolResult({
               currency: d.currency,
               cabinType: d.cabinType,
               sailDate: d.sailDate,
-              dealScore: d.dealScore,
               dealUrl: d.dealUrl,
               perks: d.perks,
               priceTrend: d.priceTrend,
               brandTier: d.brandTier,
               dropPct: d.dropPct,
-              priceHighest: d.priceHighest,
-              priceLowest: d.priceLowest,
-            }))}
-          />
-        </div>
-      ) : null;
-
-    case 'getHotDeals':
-      return result?.deals ? (
-        <div className="space-y-2">
-          <div className="flex items-center gap-1.5 text-xs font-medium text-orange-600 dark:text-orange-400">
-            <Flame className="size-3.5" />
-            <span>
-              热门特价{result.tier ? ` · ${getTierLabel(result.tier)}` : ''} · 共{' '}
-              {result.deals.length} 条
-            </span>
-          </div>
-          <DealList
-            deals={result.deals.map((d: any) => ({
-              id: d.id,
-              brand: d.brand,
-              dealName: d.dealName,
-              shipName: d.shipName,
-              destination: d.destination,
-              durationDays: d.durationDays,
-              price: d.price,
-              priceOriginal: d.priceOriginal,
-              discountPct: d.discountPct,
-              currency: d.currency,
-              cabinType: d.cabinType,
-              sailDate: d.sailDate,
-              dealScore: d.dealScore,
-              dealUrl: d.dealUrl,
-              perks: d.perks,
-              priceTrend: d.priceTrend,
-              brandTier: d.brandTier,
               priceHighest: d.priceHighest,
               priceLowest: d.priceLowest,
             }))}
@@ -405,16 +365,6 @@ function ToolResult({
     default:
       return null;
   }
-}
-
-function getTierLabel(tier: string): string {
-  const labels: Record<string, string> = {
-    budget: '大众',
-    standard: '标准',
-    premium: '高端',
-    luxury: '奢华',
-  };
-  return labels[tier] || tier;
 }
 
 function TrackingOverviewCard({ data }: { data: any }) {

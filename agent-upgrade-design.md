@@ -55,7 +55,6 @@
 │                     │   │ ┌─ 🔒 价格类 (DB) ─────┐ │    │  │
 │                     │   │ │ searchDeals           │ │    │  │
 │                     │   │ │ getTopPriceDrops      │ │    │  │
-│                     │   │ │ getHotDeals           │ │    │  │
 │                     │   │ │ getPriceHistory       │ │    │  │
 │                     │   │ │ getRegionalPrices     │ │    │  │
 │                     │   │ │ compareCruises        │ │    │  │
@@ -95,7 +94,6 @@
 |------|--------|--------|------|
 | 🔒 **价格类** | searchDeals | DB | 多维度搜索航线 |
 | 🔒 **价格类** | getTopPriceDrops | DB | 降价幅度最大 |
-| 🔒 **价格类** | getHotDeals | DB | deal_score 最高 |
 | 🔒 **价格类** | getPriceHistory | DB | 价格变动历史 |
 | 🔒 **价格类** | getRegionalPrices | DB | 各区域价格对比 |
 | 🔒 **价格类** | compareCruises | DB | 并排对比航线 |
@@ -338,7 +336,6 @@ export function buildSystemPrompt(): string {
 |------|------|----------|
 | searchDeals | 多维度搜索航线 | 用户问价格、找航线 |
 | getTopPriceDrops | 降价幅度最大 | 用户问"最大降价" |
-| getHotDeals | deal_score 最高 | 用户问"性价比最高" |
 | getPriceHistory | 价格变动历史 | 用户问"价格趋势" |
 | getRegionalPrices | 各区域价格对比 | 用户问"各区域价格" |
 | compareCruises | 并排对比航线 | 用户要比较多条航线 |
@@ -397,7 +394,6 @@ ${buildBrandSection(activeBrands)}
 | 字段 | 说明 |
 |------|------|
 | price_trend | up(涨) / down(降) / stable(稳) / new(新) |
-| deal_score | 折扣深度 0~100 |
 | price_highest | 历史最高价 |
 | price_lowest | 历史最低价 |
 
@@ -431,7 +427,7 @@ import { buildSystemPrompt } from './prompts';
 import {
   searchDeals, getBrandOverview, analyzePrices,
   getPriceHistory, generateChart, compareCruises,
-  generateCopywriting, getTopPriceDrops, getHotDeals,
+  generateCopywriting, getTopPriceDrops,
   getTrackingOverview, listDestinations, listCabinTypes,
   getRegionalPrices, getStats,
 } from './tools';
@@ -446,7 +442,6 @@ export function createCruiseAgent(model: any) {
       // 🔒 价格类工具 (DB)
       searchDeals,
       getTopPriceDrops,
-      getHotDeals,
       getPriceHistory,
       getRegionalPrices,
       compareCruises,

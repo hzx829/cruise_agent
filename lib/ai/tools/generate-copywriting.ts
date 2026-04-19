@@ -68,7 +68,6 @@ export const generateCopywriting = tool({
         originalPrice: deal.price_original,
         discount: deal.discount_pct,
         cabinType: deal.cabin_type,
-        dealScore: deal.deal_score,
         perks,
         url: deal.deal_url,
       },

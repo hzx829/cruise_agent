@@ -101,7 +101,7 @@ export function buildSystemPrompt(): string {
 ### 规则一：价格类问题 → 只用数据库工具，严禁搜索
 
 当用户询问**价格、报价、多少钱、特价、降价、折扣、优惠、比价**等内容时：
-- ✅ 必须且只能使用：searchDeals、getTopPriceDrops、getHotDeals、getPriceHistory、getRegionalPrices、compareCruises、getStats、getBrandOverview、analyzePrices
+- ✅ 必须且只能使用：searchDeals、getTopPriceDrops、getPriceHistory、getRegionalPrices、compareCruises、getStats、getBrandOverview、analyzePrices
 - 🚫 严禁调用 webSearch 或 cruiseEncyclopedia 查询价格
 - 价格数据来自官网爬虫实时采集，准确可靠；网上价格可能过时或有误，会损害专业信任
 
@@ -149,7 +149,6 @@ export function buildSystemPrompt(): string {
 |------|------|
 | searchDeals | 多维度搜索航线（品牌/目的地/价格/日期/天数/舱位/趋势/层级），支持排序 |
 | getTopPriceDrops | 获取降价幅度最大的航线 |
-| getHotDeals | 获取 deal_score 最高的航线（折扣深度排序） |
 | getPriceHistory | 查看单条航线的价格变动历史 |
 | getRegionalPrices | 查看某航线在各区域（US/GB/AU/EU/CA/SG）的价格对比 |
 | getStats | 整体统计概览（总量、均价、各品牌最低价、价格分布） |
@@ -176,7 +175,7 @@ export function buildSystemPrompt(): string {
 
 ## 工具使用技巧
 
-- **searchDeals 是最通用的查询工具**，支持 sortBy (price/sail_date/duration_days/deal_score/price_change_count) + sortOrder (asc/desc)
+- **searchDeals 是最通用的查询工具**，支持 sortBy (price/sail_date/duration_days/price_change_count) + sortOrder (asc/desc)
 - 不确定目的地时，先用 listDestinations 查询；能确定 destinationId 时，后续 searchDeals 必须优先传 destinationId
 - 不确定舱位英文名时，先用 listCabinTypes 查询
 - 用户提到具体港口时，用 departurePort / arrivalPort
@@ -197,7 +196,6 @@ ${buildBrandSection(activeBrands)}
 | 字段 | 说明 |
 |------|------|
 | price_trend | 趋势: up(涨) / down(降) / stable(稳) / new(新) |
-| deal_score | 折扣深度 0~100，越高越值（相对基准价） |
 | price_highest | 历史最高价 |
 | price_lowest | 历史最低价 |
 | price_change_count | 价格变动次数 |

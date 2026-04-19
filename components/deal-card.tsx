@@ -2,7 +2,6 @@
 
 import {
   ExternalLink,
-  Star,
   Tag,
   Calendar,
   Ship,
@@ -45,7 +44,6 @@ interface DealData {
   perks?: string[];
   perksRaw?: string[];
   dealUrl?: string;
-  dealScore?: number;
   // Price tracking fields
   priceTrend?: string;
   brandTier?: string;
@@ -220,16 +218,6 @@ export function DealCard({ deal }: { deal: DealData }) {
               </span>
             )}
           </div>
-        </div>
-      )}
-
-      {/* Deal score */}
-      {deal.dealScore != null && deal.dealScore > 0 && (
-        <div className="mt-2 flex items-center gap-1 text-xs">
-          <Star className="size-3 fill-yellow-500 text-yellow-500" />
-          <span className="text-muted-foreground">
-            性价比 {deal.dealScore.toFixed(1)}
-          </span>
         </div>
       )}
 

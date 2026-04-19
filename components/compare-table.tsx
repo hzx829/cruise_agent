@@ -24,7 +24,6 @@ interface CompareData {
     originalPrice?: number;
     discount?: string | null;
     cabinType?: string;
-    dealScore?: number;
     perks?: string[];
     perksRaw?: string[];
     url?: string;
@@ -45,7 +44,6 @@ export function CompareTable({ data }: { data: CompareData }) {
     { label: '价格', key: 'price' },
     { label: '每晚均价', key: 'pricePerNight' },
     { label: '折扣', key: 'discount' },
-    { label: '性价比', key: 'dealScore' },
   ];
 
   const formatValue = (deal: CompareData['deals'][0], key: string) => {
@@ -55,8 +53,6 @@ export function CompareTable({ data }: { data: CompareData }) {
         return `${sym}${deal.price.toLocaleString()}`;
       case 'pricePerNight':
         return deal.pricePerNight ? `${sym}${deal.pricePerNight.toFixed(0)}/晚` : '-';
-      case 'dealScore':
-        return deal.dealScore ? deal.dealScore.toFixed(1) : '-';
       default:
         return (deal as Record<string, unknown>)[key]?.toString() || '-';
     }

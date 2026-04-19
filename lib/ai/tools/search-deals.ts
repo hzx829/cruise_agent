@@ -75,9 +75,8 @@ export const searchDeals = tool({
       .optional()
       .describe('价格趋势筛选: up(涨价) / down(降价) / stable(稳定) / new(新上架)'),
     tier: tierSchema,
-    minScore: z.number().optional().describe('最低 deal_score 筛选'),
     sortBy: z
-      .enum(['price', 'sail_date', 'duration_days', 'deal_score', 'price_change_count'])
+      .enum(['price', 'sail_date', 'duration_days', 'price_change_count'])
       .optional()
       .describe('排序字段，默认按价格'),
     sortOrder: z.enum(['asc', 'desc']).optional(),
@@ -131,7 +130,6 @@ export const searchDeals = tool({
           perks: parseStringList(d.perks_display || d.perks),
           perksRaw: parseStringList(d.perks_raw || d.perks),
           dealUrl: d.deal_url,
-          dealScore: d.deal_score,
           priceTrend: d.price_trend,
           priceChangeCount: d.price_change_count,
         };

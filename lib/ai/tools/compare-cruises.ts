@@ -56,7 +56,6 @@ export const compareCruises = tool({
           ? `${deal!.discount_pct}%`
           : null,
         cabinType: deal!.cabin_type,
-        dealScore: deal!.deal_score,
         perks: parseStringList(deal!.perks_display || deal!.perks),
         perksRaw: parseStringList(deal!.perks_raw || deal!.perks),
         url: deal!.deal_url,

@@ -35,7 +35,6 @@ export const getPriceHistory = tool({
             priceHighest: deal.price_highest,
             priceChangeCount: deal.price_change_count,
             priceTrend: deal.price_trend,
-            dealScore: deal.deal_score,
             firstSeenAt: deal.first_seen_at,
             trackingSince: deal.tracking_since,
           }

@@ -30,7 +30,6 @@ export interface DealRow {
   updated_at: string | null;
   price_per_night: number | null;
   price_baseline: number | null;
-  deal_score: number | null;
   // price tracking fields
   price_lowest: number | null;
   price_highest: number | null;
@@ -92,7 +91,6 @@ export interface ActiveBrandInfo {
   tier: string;
   currency: string;
   deal_count: number;
-  scored_count: number;
   cabin_types: string;
 }
 
@@ -126,8 +124,7 @@ export interface SearchFilters {
   routeRegion?: 'aegean' | 'eastern_mediterranean' | 'western_mediterranean';
   priceTrend?: string; // 'up' | 'down' | 'stable' | 'new'
   tier?: string | string[]; // 'budget' | 'standard' | 'premium' | 'luxury' (或数组)
-  minScore?: number;
-  sortBy?: 'price' | 'sail_date' | 'duration_days' | 'deal_score' | 'price_change_count';
+  sortBy?: 'price' | 'sail_date' | 'duration_days' | 'price_change_count';
   sortOrder?: 'asc' | 'desc';
   limit?: number;
 }
@@ -158,7 +155,6 @@ export interface TopDrop {
   price_highest: number;
   price_lowest: number;
   drop_pct: number;
-  deal_score: number | null;
   cabin_type: string | null;
   duration_days: number | null;
   sail_date: string | null;

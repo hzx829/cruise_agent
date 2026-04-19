@@ -30,46 +30,6 @@ export const getTopPriceDrops = tool({
       locale: 'zh-CN',
     });
 
-    if (drops.length === 0) {
-      // 没有降价数据时，回退到 deal_score 排序
-      const fallback = queries.getHotDealsByTier({
-        tier: tierArr,
-        limit: params.limit || 15,
-        locale: 'zh-CN',
-      });
-
-      return {
-        count: fallback.length,
-        dataSource: 'deal_score',
-        message: '暂无价格变动数据（需多轮爬取积累），已按 deal_score（折扣深度）排序推荐替代。',
-        deals: fallback.map((d) => ({
-          id: d.id,
-          brand: d.brand_short_name_display || d.brand_name_display || d.brand_name_cn || d.brand_name || d.brand_id,
-          brandRaw: d.brand_name || d.brand_id,
-          brandId: d.brand_id,
-          brandTier: d.brand_tier,
-          dealName: d.deal_name,
-          shipName: d.ship_name_display || d.ship_name,
-          shipNameRaw: d.ship_name,
-          destination: d.destination_display || d.destination,
-          destinationRaw: d.destination,
-          destinationId: d.destination_id || d.primary_destination_term_id,
-          price: d.price,
-          currency: d.price_currency,
-          priceOriginal: d.price_original,
-          discountPct: d.discount_pct,
-          dealScore: d.deal_score,
-          cabinType: d.cabin_type,
-          durationDays: d.duration_days,
-          sailDate: d.sail_date,
-          priceTrend: d.price_trend,
-          dealUrl: d.deal_url,
-          perks: parseStringList(d.perks_display || d.perks),
-          perksRaw: parseStringList(d.perks_raw || d.perks),
-        })),
-      };
-    }
-
     return {
       count: drops.length,
       deals: drops.map((d) => ({
@@ -89,7 +49,6 @@ export const getTopPriceDrops = tool({
         priceHighest: d.price_highest,
         priceLowest: d.price_lowest,
         dropPct: d.drop_pct,
-        dealScore: d.deal_score,
         cabinType: d.cabin_type,
         durationDays: d.duration_days,
         sailDate: d.sail_date,

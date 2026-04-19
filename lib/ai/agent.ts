@@ -4,7 +4,6 @@ import {
   // 🔒 价格类工具 (DB)
   searchDeals,
   getTopPriceDrops,
-  getHotDeals,
   getPriceHistory,
   getRegionalPrices,
   compareCruises,
@@ -38,7 +37,6 @@ export function createCruiseAgent(model: LanguageModel) {
       // 🔒 价格类 — 数据来自爬虫，准确可靠
       searchDeals,
       getTopPriceDrops,
-      getHotDeals,
       getPriceHistory,
       getRegionalPrices,
       compareCruises,

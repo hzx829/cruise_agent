@@ -30,6 +30,24 @@ function quoteSqlLiteral(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
+function todayIso(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function addActiveSailingFilter(
+  conditions: string[],
+  params: (string | number)[],
+  tableAlias?: string
+) {
+  const prefix = tableAlias ? `${tableAlias}.` : '';
+  conditions.push(`(${prefix}sail_date IS NULL OR ${prefix}sail_date >= ?)`);
+  params.push(todayIso());
+}
+
 function localizedDealJoins(locale?: string): string {
   const localeSql = quoteSqlLiteral(normalizeLocale(locale));
 
@@ -318,6 +336,7 @@ export function searchDeals(filters: SearchFilters): SearchDealsResult {
   const db = getDb();
   const conditions: string[] = ['d.price > 0'];
   const params: (string | number)[] = [];
+  addActiveSailingFilter(conditions, params, 'd');
 
   if (filters.brand) {
     conditions.push('d.brand_id = ?');
@@ -357,10 +376,6 @@ export function searchDeals(filters: SearchFilters): SearchDealsResult {
     conditions.push(`b.tier IN (${tiers.map(() => '?').join(',')})`);
     params.push(...tiers);
   }
-  if (filters.minScore != null) {
-    conditions.push('d.deal_score >= ?');
-    params.push(filters.minScore);
-  }
 
   const where = 'WHERE ' + conditions.join(' AND ');
   const limit = Math.min(filters.limit || 20, 50);
@@ -393,9 +408,10 @@ export function getDealById(dealId: string, locale?: string): DealRow | undefine
       `SELECT ${localizedDealSelect()}
        FROM deals d
        ${localizedDealJoins(locale)}
-       WHERE d.id = ?`
+       WHERE d.id = ?
+         AND (d.sail_date IS NULL OR d.sail_date >= ?)`
     )
-    .get(dealId) as DealRow | undefined;
+    .get(dealId, todayIso()) as DealRow | undefined;
 
   return deal ? attachPerksDisplay([deal], locale)[0] : undefined;
 }
@@ -423,12 +439,15 @@ export function getBrandSummary(locale?: string): BrandSummary[] {
        FROM brands b
        LEFT JOIN brand_translations bt
          ON bt.brand_id = b.id AND bt.locale = ${localeSql}
-       LEFT JOIN deals d ON b.id = d.brand_id AND d.price > 0
+       LEFT JOIN deals d
+         ON b.id = d.brand_id
+        AND d.price > 0
+        AND (d.sail_date IS NULL OR d.sail_date >= ?)
        GROUP BY b.id
        HAVING deal_count > 0
        ORDER BY deal_count DESC`
     )
-    .all() as BrandSummary[];
+    .all(todayIso()) as BrandSummary[];
 }
 
 /** 查询有实际 deal 数据的品牌及其统计信息（用于动态组装 prompt） */
@@ -440,16 +459,18 @@ export function getActiveBrandsStats(locale?: string): ActiveBrandInfo[] {
       `SELECT b.id, b.name, COALESCE(bt.name, b.name_cn) AS name_cn, b.tier,
               d.price_currency AS currency,
               COUNT(d.id) AS deal_count,
-              SUM(CASE WHEN d.deal_score > 0 THEN 1 ELSE 0 END) AS scored_count,
               GROUP_CONCAT(DISTINCT d.cabin_type) AS cabin_types
        FROM brands b
        LEFT JOIN brand_translations bt
          ON bt.brand_id = b.id AND bt.locale = ${localeSql}
-       JOIN deals d ON b.id = d.brand_id AND d.price > 0
+       JOIN deals d
+         ON b.id = d.brand_id
+        AND d.price > 0
+        AND (d.sail_date IS NULL OR d.sail_date >= ?)
        GROUP BY b.id
        ORDER BY b.tier, deal_count DESC`
     )
-    .all() as ActiveBrandInfo[];
+    .all(todayIso()) as ActiveBrandInfo[];
 }
 
 // ─── 目的地 ─────────────────────────────────────────────
@@ -475,10 +496,11 @@ export function getDestinations(locale?: string): DestinationSummary[] {
        LEFT JOIN term_translations tt_en
          ON tt_en.term_id = t.id AND tt_en.locale = 'en'
        WHERE d.price > 0
+         AND (d.sail_date IS NULL OR d.sail_date >= ?)
        GROUP BY t.id
        ORDER BY count DESC`
     )
-    .all() as DestinationSummary[];
+    .all(todayIso()) as DestinationSummary[];
 }
 
 /** 获取所有舱位/房型及数量 */
@@ -488,11 +510,13 @@ export function getCabinTypes(): { cabin_type: string; count: number }[] {
     .prepare(
       `SELECT cabin_type, COUNT(*) AS count
        FROM deals
-       WHERE price > 0 AND cabin_type IS NOT NULL AND cabin_type != ''
+       WHERE price > 0
+         AND (sail_date IS NULL OR sail_date >= ?)
+         AND cabin_type IS NOT NULL AND cabin_type != ''
        GROUP BY cabin_type
        ORDER BY count DESC`
     )
-    .all() as { cabin_type: string; count: number }[];
+    .all(todayIso()) as { cabin_type: string; count: number }[];
 }
 
 // ─── 价格分析 ───────────────────────────────────────────
@@ -505,6 +529,7 @@ export function getPriceStats(filters?: {
   const db = getDb();
   const conditions: string[] = ['price > 0'];
   const params: (string | number)[] = [];
+  addActiveSailingFilter(conditions, params);
 
   if (filters?.brand) {
     conditions.push('brand_id = ?');
@@ -537,6 +562,7 @@ export function getPriceDistribution(filters?: {
   const db = getDb();
   const conditions: string[] = ['price > 0'];
   const params: (string | number)[] = [];
+  addActiveSailingFilter(conditions, params);
 
   if (filters?.brand) {
     conditions.push('brand_id = ?');
@@ -594,6 +620,7 @@ export function getDurationPriceData(filters?: {
     'duration_days IS NOT NULL',
   ];
   const params: (string | number)[] = [];
+  addActiveSailingFilter(conditions, params);
 
   if (filters?.brand) {
     conditions.push('brand_id = ?');
@@ -626,10 +653,11 @@ export function getBrandPriceComparison() {
               price_currency AS currency
        FROM deals
        WHERE price > 0
+         AND (sail_date IS NULL OR sail_date >= ?)
        GROUP BY brand_id, price_currency
        ORDER BY avg_price ASC`
     )
-    .all();
+    .all(todayIso());
 }
 
 // ─── 价格追踪 ───────────────────────────────────────────
@@ -648,6 +676,7 @@ export function getTopPriceDrops(filters?: {
     'd.price_highest > d.price',
   ];
   const params: (string | number)[] = [];
+  addActiveSailingFilter(conditions, params, 'd');
 
   if (filters?.brand) {
     conditions.push('d.brand_id = ?');
@@ -684,10 +713,12 @@ export function getTrendStats() {
     .prepare(
       `SELECT price_trend, COUNT(*) AS count
        FROM deals
-       WHERE price > 0 AND price_trend IS NOT NULL
+       WHERE price > 0
+         AND (sail_date IS NULL OR sail_date >= ?)
+         AND price_trend IS NOT NULL
        GROUP BY price_trend`
     )
-    .all() as { price_trend: string; count: number }[];
+    .all(todayIso()) as { price_trend: string; count: number }[];
 }
 
 /** 价格追踪整体概览 */
@@ -700,15 +731,23 @@ export function getTrackingOverview() {
 
   const trackedDeals = db
     .prepare(
-      `SELECT COUNT(*) AS cnt FROM deals WHERE price_trend IS NOT NULL AND price > 0`
+      `SELECT COUNT(*) AS cnt
+       FROM deals
+       WHERE price_trend IS NOT NULL
+         AND price > 0
+         AND (sail_date IS NULL OR sail_date >= ?)`
     )
-    .get() as { cnt: number };
+    .get(todayIso()) as { cnt: number };
 
   const changedDeals = db
     .prepare(
-      `SELECT COUNT(*) AS cnt FROM deals WHERE price_change_count > 0 AND price > 0`
+      `SELECT COUNT(*) AS cnt
+       FROM deals
+       WHERE price_change_count > 0
+         AND price > 0
+         AND (sail_date IS NULL OR sail_date >= ?)`
     )
-    .get() as { cnt: number };
+    .get(todayIso()) as { cnt: number };
 
   const trends = getTrendStats();
   const topDrops = getTopPriceDrops({ limit: 10, locale: DEFAULT_LOCALE });
@@ -722,39 +761,6 @@ export function getTrackingOverview() {
   };
 }
 
-/** 高 deal_score 航线（适合小红书推广），按品牌层级分组 */
-export function getHotDealsByTier(filters?: {
-  tier?: string | string[];
-  limit?: number;
-  locale?: string;
-}) {
-  const db = getDb();
-  const conditions: string[] = ['d.price > 0', 'd.deal_score > 0'];
-  const params: (string | number)[] = [];
-
-  if (filters?.tier) {
-    const tiers = Array.isArray(filters.tier) ? filters.tier : [filters.tier];
-    conditions.push(`b.tier IN (${tiers.map(() => '?').join(',')})`);
-    params.push(...tiers);
-  }
-
-  const where = 'WHERE ' + conditions.join(' AND ');
-  const limit = Math.min(filters?.limit || 20, 50);
-
-  const deals = db
-    .prepare(
-      `SELECT ${localizedDealSelect()}
-       FROM deals d
-       ${localizedDealJoins(filters?.locale)}
-       ${where}
-       ORDER BY d.deal_score DESC
-       LIMIT ?`
-    )
-    .all(...params, limit) as DealRow[];
-
-  return attachPerksDisplay(deals, filters?.locale);
-}
-
 /** 获取指定 deal 在各区域的价格 */
 export function getRegionalPrices(dealId: string) {
   const db = getDb();
@@ -764,9 +770,10 @@ export function getRegionalPrices(dealId: string) {
        FROM regional_prices rp
        JOIN deals d ON rp.deal_id = d.id
        WHERE rp.deal_id = ?
+         AND (d.sail_date IS NULL OR d.sail_date >= ?)
        ORDER BY rp.region`
     )
-    .all(dealId) as {
+    .all(dealId, todayIso()) as {
     deal_id: string;
     region: string;
     currency: string;
@@ -788,9 +795,11 @@ export function getOverallStats(locale?: string) {
               ROUND(AVG(price), 2) AS avg_price,
               MIN(price) AS min_price,
               MAX(price) AS max_price
-       FROM deals WHERE price > 0`
+       FROM deals
+       WHERE price > 0
+         AND (sail_date IS NULL OR sail_date >= ?)`
     )
-    .get() as {
+    .get(todayIso()) as {
     total_deals: number;
     total_brands: number;
     avg_price: number;
@@ -807,10 +816,11 @@ export function getOverallStats(locale?: string) {
        LEFT JOIN brand_translations bt
          ON bt.brand_id = b.id AND bt.locale = ${localeSql}
        WHERE d.price > 0
+         AND (d.sail_date IS NULL OR d.sail_date >= ?)
        GROUP BY d.brand_id
        ORDER BY min_price ASC`
     )
-    .all() as {
+    .all(todayIso()) as {
     brand_id: string;
     name_cn: string | null;
     name: string;
@@ -831,11 +841,13 @@ export function getOverallStats(locale?: string) {
            ELSE '5000+'
          END AS price_range,
          COUNT(*) AS count
-       FROM deals WHERE price > 0
+       FROM deals
+       WHERE price > 0
+         AND (sail_date IS NULL OR sail_date >= ?)
        GROUP BY price_range
        ORDER BY MIN(price)`
     )
-    .all() as { price_range: string; count: number }[];
+    .all(todayIso()) as { price_range: string; count: number }[];
 
   return { ...totals, brandMins, distribution };
 }
@@ -851,8 +863,9 @@ export function getRecentPriceChanges(limit: number = 20) {
        JOIN deals d ON ph.deal_id = d.id
        LEFT JOIN brands b ON d.brand_id = b.id
        WHERE d.price_change_count > 0
+         AND (d.sail_date IS NULL OR d.sail_date >= ?)
        ORDER BY ph.recorded_at DESC
        LIMIT ?`
     )
-    .all(limit);
+    .all(todayIso(), limit);
 }

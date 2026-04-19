@@ -29,7 +29,7 @@ export const tierSchema = z
 
 /**
  * deal 主键是 cruise_crawler 生成的 16 位十六进制字符串
- * 调工具时必须原样复用上一个工具返回的 id，不能拿排名、deal_score 或价格代替
+ * 调工具时必须原样复用上一个工具返回的 id，不能拿排名、价格或序号代替
  */
 export const dealIdSchema = z
   .string()
@@ -37,7 +37,7 @@ export const dealIdSchema = z
   .toLowerCase()
   .regex(/^[0-9a-f]{16}$/, 'dealId 必须是 16 位十六进制字符串')
   .describe(
-    '航线 deal ID（16 位十六进制字符串），必须直接使用上一工具返回的 id 原值，不能用排名、deal_score、价格或序号代替'
+    '航线 deal ID（16 位十六进制字符串），必须直接使用上一工具返回的 id 原值，不能用排名、价格或序号代替'
   );
 
 export const dealIdsSchema = z

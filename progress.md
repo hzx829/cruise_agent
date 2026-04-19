@@ -68,19 +68,17 @@ npm run dev
   - `getTopPriceDrops()` — 降价幅度最大的航线，支持按品牌层级筛选
   - `getTrendStats()` — 按 price_trend 分组统计
   - `getTrackingOverview()` — 追踪系统整体概览（含 top drops）
-  - `getHotDealsByTier()` — 按品牌层级获取高 deal_score 航线
   - `getRecentPriceChanges()` — 最近的价格变动记录
-- `searchDeals()` 增强：支持 `priceTrend`、`tier`、`minScore` 筛选
+- `searchDeals()` 增强：支持 `priceTrend`、`tier` 筛选
 
-#### 新增 AI 工具 (3 个，总计 10 个)
+#### 新增 AI 工具
 
 - [lib/ai/tools/get-top-drops.ts](lib/ai/tools/get-top-drops.ts) — 🔥 降价排行榜（核心工具，支持按品牌层级筛选）
-- [lib/ai/tools/get-hot-deals.ts](lib/ai/tools/get-hot-deals.ts) — 💎 热门特价（高 deal_score 航线，按层级筛选）
 - [lib/ai/tools/get-tracking-overview.ts](lib/ai/tools/get-tracking-overview.ts) — 📡 追踪系统概览
 
 #### 工具增强
 
-- `search-deals` — 新增 priceTrend/tier/minScore 参数，输出增加 brandTier/priceHighest/priceLowest/priceTrend 字段
+- `search-deals` — 新增 priceTrend/tier 参数，输出增加 brandTier/priceHighest/priceLowest/priceTrend 字段
 - `get-price-history` — 输出增加 trackingStats 和 summary（含 min/max/avg/changePct）
 
 #### 系统提示词重写
@@ -104,7 +102,7 @@ npm run dev
   - Thinking 动画（bouncing dots）
   - 价格追踪导向的快捷操作
 - [components/message.tsx](components/message.tsx) — 重写：
-  - 新增 3 个 tool part 处理器（getTopPriceDrops/getHotDeals/getTrackingOverview）
+  - 新增 tool part 处理器（getTopPriceDrops/getTrackingOverview）
   - 降价排行专属 UI（红色 TrendingDown 标题）
   - 追踪概览卡片（4 宫格统计 + 趋势标签）
   - 全部使用语义化颜色（bg-card, text-muted-foreground 等）
@@ -152,12 +150,6 @@ npm run dev
 
 > 解决核心问题：用户用中文查「夏威夷」→ LLM 不知道 DB 里叫 `Hawaii` → 返回 0 结果。
 > 现在 LLM 会先调 `listDestinations` 获取可用值，再用正确参数搜索。
-
-#### 工具 Fallback 机制
-
-- [lib/ai/tools/get-top-drops.ts](lib/ai/tools/get-top-drops.ts) — 降价数据为空时自动回退到 deal_score 排序
-  - 返回 `dataSource: 'deal_score'` 标记 + fallback 说明
-  - 解决只爬了一两轮、尚无价格变动数据时用户查「降幅最大」返回空的问题
 
 #### Bug 修复
 
@@ -235,11 +227,11 @@ npm run dev
 - **ToolLoopAgent vs 手动 streamText**：ToolLoopAgent 统一管理工具循环/停止条件，代码更简洁
 - **cruiseEncyclopedia 独立工具**：固定限定搜索域，比 webSearch + includeDomains 参数更稳定
 
-### 工具总览（16 个）
+### 工具总览
 
 | 分类 | 数量 | 工具 |
 |------|------|------|
-| 🔒 价格类（DB） | 12 | searchDeals / getTopPriceDrops / getHotDeals / getPriceHistory / getRegionalPrices / compareCruises / getStats / getBrandOverview / analyzePrices / getTrackingOverview / listDestinations / listCabinTypes |
+| 🔒 价格类（DB） | 11 | searchDeals / getTopPriceDrops / getPriceHistory / getRegionalPrices / compareCruises / getStats / getBrandOverview / analyzePrices / getTrackingOverview / listDestinations / listCabinTypes |
 | 🌐 知识类（Web） | 2 | webSearch / cruiseEncyclopedia |
 | ✍️ 创作类 | 2 | generateCopywriting / generateChart |
 
