@@ -5,6 +5,7 @@
  * - 聊天会话 + 消息 (持久化 AI SDK UIMessage)
  * - 通知 (价格变动、新航线等)
  * - 通知配置
+ * - Agent Prompt 版本
  */
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'fs';
@@ -66,6 +67,25 @@ agentDb.exec(`
     ('daily_digest_time', '09:00'),
     ('price_drop_threshold', '10'),
     ('notify_brands', '["carnival","ncl","royal_caribbean_cn"]');
+
+  CREATE TABLE IF NOT EXISTS agent_prompts (
+    id TEXT PRIMARY KEY,
+    version INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('draft', 'active', 'archived')),
+    content TEXT NOT NULL,
+    change_note TEXT,
+    created_by TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    activated_at TEXT
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_prompts_active
+    ON agent_prompts(status)
+    WHERE status = 'active';
+
+  CREATE INDEX IF NOT EXISTS idx_agent_prompts_status_version
+    ON agent_prompts(status, version DESC);
 `);
 
 export default agentDb;

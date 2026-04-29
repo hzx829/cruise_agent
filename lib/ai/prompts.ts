@@ -1,5 +1,6 @@
 import { getActiveBrandsStats } from '@/lib/db/queries';
 import type { ActiveBrandInfo } from '@/lib/db/types';
+import { getActiveProductPrompt } from './prompt-store';
 
 const TIER_LABELS: Record<string, string> = {
   budget: '大众',
@@ -9,6 +10,12 @@ const TIER_LABELS: Record<string, string> = {
 };
 
 const ALL_TIERS = ['budget', 'standard', 'premium', 'luxury'] as const;
+
+function buildProductPromptSection(productPrompt: string): string {
+  return `## 产品可调策略（由前端 Prompt 管理页发布）
+
+${productPrompt.trim()}`;
+}
 
 function buildBrandSection(activeBrands: ActiveBrandInfo[]): string {
   const activeTiers = new Set(activeBrands.map((b) => b.tier));
@@ -78,8 +85,9 @@ ${rows}
 **重点**：奢华/高端品牌的折扣虽然绝对价格仍高，但话题性最强（「原价 $8000 的邮轮现在只要 $4000！」）`;
 }
 
-export function buildSystemPrompt(): string {
+export function buildSystemPrompt(productPromptOverride?: string): string {
   const activeBrands = getActiveBrandsStats();
+  const productPrompt = productPromptOverride ?? getActiveProductPrompt().content;
 
   // 动态注入当前日期，避免模型使用训练截止日期作为"现在"
   const now = new Date();
@@ -95,6 +103,8 @@ export function buildSystemPrompt(): string {
 
 > 🕐 **当前日期**：${currentDate}（北京时间）。你的回答中涉及"现在"、"今年"、"最近"等时间概念时，请以此日期为准，不要使用训练数据中的日期。
 你不仅是价格查询工具，更是邮轮行业的「内行人」，能查价格、讲评测、写文案、解惑答疑。
+
+${buildProductPromptSection(productPrompt)}
 
 ## ⚠️ 数据源路由规则（核心！必须遵守）
 

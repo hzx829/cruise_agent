@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Ship, Plus } from 'lucide-react';
+import { Ship, Plus, Settings2 } from 'lucide-react';
 
 import {
   Sidebar,
@@ -67,6 +67,14 @@ export function AppSidebar() {
       {/* ── Footer: 主题切换 ── */}
       <SidebarFooter>
         <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton tooltip="Prompt 管理" asChild>
+              <Link href="/admin/prompts">
+                <Settings2 />
+                <span>Prompt 管理</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <NotificationBell />
           </SidebarMenuItem>
