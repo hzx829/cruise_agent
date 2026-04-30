@@ -31,10 +31,13 @@ export async function POST(req: Request) {
   let notificationCount = 0;
 
   for (const drop of significantDrops) {
+    const shipName = drop.ship_name_display || drop.ship_name || '邮轮';
+    const destination = drop.destination_display || drop.destination || '目的地待确认';
+
     createNotification({
       type: 'price_drop',
-      title: `🔥 ${drop.ship_name} 降价 ${Math.abs(drop.drop_pct).toFixed(0)}%`,
-      body: `${drop.destination} ${drop.duration_days}天 ${drop.price_currency}${drop.price}`,
+      title: `🔥 ${shipName} 降价 ${Math.abs(drop.drop_pct).toFixed(0)}%`,
+      body: `${destination} ${drop.duration_days}天 ${drop.price_currency}${drop.price}`,
       data: drop,
     });
     notificationCount++;
