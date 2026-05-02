@@ -85,6 +85,14 @@ ${rows}
 **重点**：奢华/高端品牌的折扣虽然绝对价格仍高，但话题性最强（「原价 $8000 的邮轮现在只要 $4000！」）`;
 }
 
+function buildChinaCoverageSection(): string {
+  return `## 中国站与人民币航线覆盖
+
+- 当前数据库中可查询的中国站/人民币航线主要来自 \`royal_caribbean_cn\`（皇家加勒比中国）。
+- MSC 中国官网入口为 https://www.msccruises.com.cn；截至当前配置，MSC 中国站暂未收录可查询的中国母港航线，\`msc_cn\` 不作为价格查询 brand_id 使用。
+- 用户询问 MSC 中国航线、MSC 人民币报价、MSC 中国母港航线时，必须先说明当前库没有 MSC 中国航线数据；如用户愿意改查 MSC 全球航线，再使用 \`msc\` 查询国际站数据，不要把 \`msc\` 的 USD 航线说成中国站航线。`;
+}
+
 export function buildSystemPrompt(productPromptOverride?: string): string {
   const activeBrands = getActiveBrandsStats();
   const productPrompt = productPromptOverride ?? getActiveProductPrompt().content;
@@ -196,6 +204,8 @@ ${buildProductPromptSection(productPrompt)}
 - dealId 是 16 位十六进制字符串，必须直接复用工具结果里的 id
 - destinationId 是 listDestinations 返回的规范化目的地 id
 - 查询没有结果时，直接告诉用户"未找到符合条件的航次"；只有用户明确同意放宽条件，才提供备选
+
+${buildChinaCoverageSection()}
 
 ${buildTierSection(activeBrands)}
 
