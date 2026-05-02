@@ -18,6 +18,11 @@ import {
   matchesLocation,
   matchesRouteRegion,
 } from '@/lib/cruise/search-utils';
+import {
+  expandDestinationSearchTerms,
+  getDestinationFallbackName,
+  isInvalidDestinationId,
+} from '@/lib/cruise/destination-utils';
 
 const DEFAULT_LOCALE = 'zh-CN';
 
@@ -161,29 +166,43 @@ function addDestinationFilter(
   const prefix = tableAlias ? `${tableAlias}.` : '';
 
   if (filters?.destinationId) {
+    if (isInvalidDestinationId(filters.destinationId)) {
+      conditions.push('1 = 0');
+      return;
+    }
     conditions.push(`${prefix}primary_destination_term_id = ?`);
-    params.push(filters.destinationId);
+    params.push(filters.destinationId.trim());
     return;
   }
 
   if (!filters?.destination) return;
 
-  conditions.push(`(
+  const searchTerms = expandDestinationSearchTerms(filters.destination);
+  if (searchTerms.length === 0) return;
+
+  const perTermConditions = searchTerms.map(() => `(
     ${prefix}destination LIKE ?
     OR EXISTS (
       SELECT 1 FROM terms destination_term
       WHERE destination_term.id = ${prefix}primary_destination_term_id
+        AND destination_term.term_type = 'destination'
         AND destination_term.canonical_name LIKE ?
     )
     OR EXISTS (
       SELECT 1 FROM term_translations destination_translation
+      JOIN terms destination_translation_term
+        ON destination_translation_term.id = destination_translation.term_id
       WHERE destination_translation.term_id = ${prefix}primary_destination_term_id
+        AND destination_translation_term.term_type = 'destination'
         AND destination_translation.name LIKE ?
     )
   )`);
-  params.push(`%${filters.destination}%`);
-  params.push(`%${filters.destination}%`);
-  params.push(`%${filters.destination}%`);
+
+  conditions.push(`(${perTermConditions.join(' OR ')})`);
+  for (const term of searchTerms) {
+    const likeTerm = `%${term}%`;
+    params.push(likeTerm, likeTerm, likeTerm);
+  }
 }
 
 // ─── Deal 查询 ──────────────────────────────────────────
@@ -382,7 +401,15 @@ export function searchDeals(filters: SearchFilters): SearchDealsResult {
   const groupedBySailing = !filters.cabinType;
   const sql = buildSearchSql(where, groupedBySailing, filters.locale);
 
-  const baseDeals = db.prepare(sql).all(...params) as DealRow[];
+  const baseDeals = (db.prepare(sql).all(...params) as DealRow[]).map((deal) => {
+    const fallbackDestinationName = getDestinationFallbackName(
+      deal.destination_display || deal.destination,
+      filters.locale
+    );
+    return fallbackDestinationName
+      ? { ...deal, destination_display: fallbackDestinationName }
+      : deal;
+  });
   const advancedFiltered = baseDeals.filter((deal) =>
     matchesAdvancedFilters(deal, filters)
   );
@@ -478,7 +505,7 @@ export function getActiveBrandsStats(locale?: string): ActiveBrandInfo[] {
 export function getDestinations(locale?: string): DestinationSummary[] {
   const db = getDb();
   const localeSql = quoteSqlLiteral(normalizeLocale(locale));
-  return db
+  const rows = db
     .prepare(
       `SELECT t.id,
               COALESCE(tt_locale.name, tt_en.name, t.canonical_name) AS name,
@@ -501,6 +528,13 @@ export function getDestinations(locale?: string): DestinationSummary[] {
        ORDER BY count DESC`
     )
     .all(todayIso()) as DestinationSummary[];
+
+  return rows.map((row) => {
+    const fallbackName = getDestinationFallbackName(row.canonical_name, locale);
+    return fallbackName
+      ? { ...row, name: fallbackName, destination: fallbackName }
+      : row;
+  });
 }
 
 /** 获取所有舱位/房型及数量 */
