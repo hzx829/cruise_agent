@@ -19,6 +19,18 @@ const GENERIC_DESTINATION_WORDS = [
   'itineraries',
 ];
 
+const NON_DESTINATION_MARKET_TERMS = new Set([
+  '中国',
+  '中国站',
+  '中国母港',
+  '中国出发',
+  '国内母港',
+  '人民币',
+  'china',
+  'china homeport',
+  'cny',
+]);
+
 const DESTINATION_QUERY_ALIASES: {
   aliases: string[];
   searchTerms: string[];
@@ -40,6 +52,10 @@ const DESTINATION_QUERY_ALIASES: {
     searchTerms: ['Northern Europe', 'Baltics & Northern Europe'],
   },
   {
+    aliases: ['欧洲', '欧洲航线', 'europe'],
+    searchTerms: ['Europe', 'Northern Europe', 'Mediterranean'],
+  },
+  {
     aliases: ['地中海', '地中海航线', 'mediterranean'],
     searchTerms: ['Mediterranean'],
   },
@@ -56,8 +72,48 @@ const DESTINATION_QUERY_ALIASES: {
     searchTerms: ['Caribbean'],
   },
   {
+    aliases: ['巴哈马', '巴哈马航线', 'bahamas'],
+    searchTerms: ['Bahamas'],
+  },
+  {
+    aliases: ['百慕大', 'bermuda'],
+    searchTerms: ['Bermuda'],
+  },
+  {
+    aliases: ['墨西哥', '墨西哥航线', 'mexico', 'mexican riviera'],
+    searchTerms: ['Mexican Riviera'],
+  },
+  {
     aliases: ['阿拉斯加', 'alaska'],
     searchTerms: ['Alaska'],
+  },
+  {
+    aliases: ['夏威夷', 'hawaii'],
+    searchTerms: ['Hawaii'],
+  },
+  {
+    aliases: ['澳洲', '澳大利亚', 'australia'],
+    searchTerms: ['Australia'],
+  },
+  {
+    aliases: ['南美', '南美洲', 'south america'],
+    searchTerms: ['South America'],
+  },
+  {
+    aliases: ['南太平洋', 'south pacific'],
+    searchTerms: ['South Pacific'],
+  },
+  {
+    aliases: ['加拿大新英格兰', '加拿大', '新英格兰', 'canada new england'],
+    searchTerms: ['Canada & New England'],
+  },
+  {
+    aliases: ['南极', '南极洲', 'antarctica'],
+    searchTerms: ['Antarctica'],
+  },
+  {
+    aliases: ['加拉帕戈斯', 'galapagos', 'galápagos'],
+    searchTerms: ['Galapagos', 'Galápagos'],
   },
   {
     aliases: ['日本', 'japan'],
@@ -107,6 +163,7 @@ function normalizedAliasSet(values: string[]): Set<string> {
 export function expandDestinationSearchTerms(destination?: string | null): string[] {
   const normalizedDestination = stripGenericDestinationWords(destination ?? '');
   if (!normalizedDestination) return [];
+  if (NON_DESTINATION_MARKET_TERMS.has(normalizedDestination)) return [];
 
   const matchedTerms = new Set<string>();
   for (const group of DESTINATION_QUERY_ALIASES) {
@@ -128,7 +185,7 @@ export function expandDestinationSearchTerms(destination?: string | null): strin
     return Array.from(matchedTerms);
   }
 
-  return [destination?.trim() ?? ''].filter(Boolean);
+  return [normalizedDestination];
 }
 
 export function getDestinationFallbackName(

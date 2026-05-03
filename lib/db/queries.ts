@@ -18,6 +18,7 @@ import {
   matchesCabinType,
   matchesLocation,
   matchesRouteRegion,
+  normalizeSearchText,
 } from '@/lib/cruise/search-utils';
 import {
   expandDestinationSearchTerms,
@@ -27,9 +28,125 @@ import {
 
 const DEFAULT_LOCALE = 'zh-CN';
 
+const BRAND_ALIAS_IDS: Record<string, string> = {
+  '皇家加勒比中国': 'royal_caribbean_cn',
+  '皇家中国': 'royal_caribbean_cn',
+  '皇家加勒比中国站': 'royal_caribbean_cn',
+  'royal caribbean china': 'royal_caribbean_cn',
+  'rccl china': 'royal_caribbean_cn',
+  '皇家加勒比国际': 'royal_caribbean',
+  '皇家国际': 'royal_caribbean',
+  'royal caribbean international': 'royal_caribbean',
+  'msc地中海邮轮': 'msc',
+  '地中海邮轮': 'msc',
+  'msc cruises': 'msc',
+  '诺唯真': 'ncl',
+  '诺唯真邮轮': 'ncl',
+  '挪威邮轮': 'ncl',
+  'norwegian cruise line': 'ncl',
+  '公主': 'princess',
+  '公主邮轮': 'princess',
+  'princess cruises': 'princess',
+  '精致': 'celebrity',
+  '精致邮轮': 'celebrity',
+  'celebrity cruises': 'celebrity',
+  '嘉年华': 'carnival',
+  '嘉年华邮轮': 'carnival',
+  'carnival cruise line': 'carnival',
+  '迪士尼': 'disney',
+  '迪士尼邮轮': 'disney',
+  'disney cruise line': 'disney',
+  '荷美': 'holland_america',
+  '荷美邮轮': 'holland_america',
+  'holland america': 'holland_america',
+  'holland america line': 'holland_america',
+  '歌诗达': 'costa',
+  '歌诗达邮轮': 'costa',
+  'costa cruises': 'costa',
+  '银海': 'silversea',
+  '银海邮轮': 'silversea',
+  'silversea cruises': 'silversea',
+  '庞洛': 'ponant',
+  '庞洛邮轮': 'ponant',
+  '星梦': 'dream_cruises',
+  '星梦邮轮': 'dream_cruises',
+  'stardream cruises': 'dream_cruises',
+};
+
+const ROYAL_GENERIC_ALIASES = new Set([
+  '皇家',
+  '皇家加勒比',
+  '皇家加勒比邮轮',
+  'royal',
+  'royal caribbean',
+  'rccl',
+]);
+
 function normalizeLocale(locale?: string): 'zh-CN' | 'en' {
   if (!locale) return DEFAULT_LOCALE;
   return locale.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en';
+}
+
+function isChinaHomeportContext(filters?: Pick<SearchFilters, 'departurePort'>): boolean {
+  const departurePort = filters?.departurePort;
+  if (!departurePort) return false;
+
+  return (
+    matchesLocation(departurePort, 'shanghai') ||
+    matchesLocation(departurePort, 'hong kong') ||
+    matchesLocation(departurePort, 'tianjin') ||
+    matchesLocation(departurePort, 'xiamen') ||
+    matchesLocation(departurePort, 'shenzhen')
+  );
+}
+
+function resolveBrandId(brand: string, filters?: Pick<SearchFilters, 'departurePort'>): string {
+  const trimmed = brand.trim();
+  const normalized = normalizeSearchText(trimmed);
+  if (!normalized) return trimmed;
+
+  const db = getDb();
+  const brands = db
+    .prepare('SELECT id, name, name_cn FROM brands WHERE is_active = 1')
+    .all() as Pick<BrandRow, 'id' | 'name' | 'name_cn'>[];
+
+  const exactMatch = brands.find((candidate) =>
+    [candidate.id, candidate.name, candidate.name_cn].some(
+      (value) => normalizeSearchText(value) === normalized
+    )
+  );
+  if (exactMatch) return exactMatch.id;
+
+  const directAlias = BRAND_ALIAS_IDS[normalized];
+  if (directAlias) return directAlias;
+
+  if (ROYAL_GENERIC_ALIASES.has(normalized)) {
+    return isChinaHomeportContext(filters) ? 'royal_caribbean_cn' : 'royal_caribbean';
+  }
+
+  const partialMatches = brands.filter((candidate) =>
+    [candidate.id, candidate.name, candidate.name_cn].some((value) => {
+      const normalizedValue = normalizeSearchText(value);
+      return (
+        normalizedValue &&
+        (normalizedValue.includes(normalized) || normalized.includes(normalizedValue))
+      );
+    })
+  );
+
+  return partialMatches.length === 1 ? partialMatches[0].id : trimmed;
+}
+
+function addBrandFilter(
+  conditions: string[],
+  params: (string | number)[],
+  brand: string | undefined,
+  columnName: string,
+  filters?: Pick<SearchFilters, 'departurePort'>
+) {
+  if (!brand) return;
+  conditions.push(`${columnName} = ?`);
+  params.push(resolveBrandId(brand, filters));
 }
 
 function quoteSqlLiteral(value: string): string {
@@ -460,10 +577,7 @@ export function searchDeals(filters: SearchFilters): SearchDealsResult {
   const params: (string | number)[] = [];
   addActiveSailingFilter(conditions, params, 'd');
 
-  if (filters.brand) {
-    conditions.push('d.brand_id = ?');
-    params.push(filters.brand);
-  }
+  addBrandFilter(conditions, params, filters.brand, 'd.brand_id', filters);
   addDestinationFilter(conditions, params, filters, 'd');
   if (filters.priceMin != null) {
     conditions.push('d.price >= ?');
@@ -670,10 +784,7 @@ export function getPriceStats(filters?: {
   const params: (string | number)[] = [];
   addActiveSailingFilter(conditions, params);
 
-  if (filters?.brand) {
-    conditions.push('brand_id = ?');
-    params.push(filters.brand);
-  }
+  addBrandFilter(conditions, params, filters?.brand, 'brand_id');
   addDestinationFilter(conditions, params, filters);
 
   const where = 'WHERE ' + conditions.join(' AND ');
@@ -703,10 +814,7 @@ export function getPriceDistribution(filters?: {
   const params: (string | number)[] = [];
   addActiveSailingFilter(conditions, params);
 
-  if (filters?.brand) {
-    conditions.push('brand_id = ?');
-    params.push(filters.brand);
-  }
+  addBrandFilter(conditions, params, filters?.brand, 'brand_id');
   addDestinationFilter(conditions, params, filters);
 
   const where = 'WHERE ' + conditions.join(' AND ');
@@ -761,10 +869,7 @@ export function getDurationPriceData(filters?: {
   const params: (string | number)[] = [];
   addActiveSailingFilter(conditions, params);
 
-  if (filters?.brand) {
-    conditions.push('brand_id = ?');
-    params.push(filters.brand);
-  }
+  addBrandFilter(conditions, params, filters?.brand, 'brand_id');
   addDestinationFilter(conditions, params, filters);
 
   const where = 'WHERE ' + conditions.join(' AND ');
@@ -817,10 +922,7 @@ export function getTopPriceDrops(filters?: {
   const params: (string | number)[] = [];
   addActiveSailingFilter(conditions, params, 'd');
 
-  if (filters?.brand) {
-    conditions.push('d.brand_id = ?');
-    params.push(filters.brand);
-  }
+  addBrandFilter(conditions, params, filters?.brand, 'd.brand_id');
   if (filters?.tier) {
     const tiers = Array.isArray(filters.tier) ? filters.tier : [filters.tier];
     conditions.push(`b.tier IN (${tiers.map(() => '?').join(',')})`);
