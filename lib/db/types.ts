@@ -49,6 +49,20 @@ export interface DealRow {
   destination_id?: string | null;
   perks_display?: string | null;
   perks_raw?: string | null;
+  route_stops_display?: string | null;
+  route_source?: string | null;
+  route_source_url?: string | null;
+  route_confidence?: number | null;
+  route_completeness?: 'structured' | 'official_link' | 'missing' | null;
+}
+
+export interface RouteStopDisplay {
+  seq: number;
+  portName: string;
+  portId: string | null;
+  source: string;
+  sourceUrl: string | null;
+  confidence: number | null;
 }
 
 export interface BrandRow {
@@ -172,4 +186,9 @@ export interface TopDrop {
   destination_id?: string | null;
   perks_display?: string | null;
   perks_raw?: string | null;
+  route_stops_display?: string | null;
+  route_source?: string | null;
+  route_source_url?: string | null;
+  route_confidence?: number | null;
+  route_completeness?: 'structured' | 'official_link' | 'missing' | null;
 }

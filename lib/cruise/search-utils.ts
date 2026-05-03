@@ -226,18 +226,40 @@ export function getItineraryStops(itinerary?: string | null): string[] {
   return [trimmed];
 }
 
-export function getRouteEndpoints(deal: Pick<DealRow, 'departure_port' | 'itinerary'>): {
+export function getStructuredRouteStops(
+  deal: Pick<DealRow, 'route_stops_display' | 'itinerary'>
+): string[] {
+  if (deal.route_stops_display) {
+    try {
+      const parsed = JSON.parse(deal.route_stops_display);
+      if (Array.isArray(parsed)) {
+        const stops = parsed
+          .map((item) => String(item?.portName ?? '').trim())
+          .filter(Boolean);
+        if (stops.length > 0) return stops;
+      }
+    } catch {
+      // Fall through to the raw itinerary parser.
+    }
+  }
+
+  return getItineraryStops(deal.itinerary);
+}
+
+export function getRouteEndpoints(
+  deal: Pick<DealRow, 'departure_port' | 'itinerary' | 'route_stops_display'>
+): {
   startPort: string | null;
   endPort: string | null;
 } {
-  const stops = getItineraryStops(deal.itinerary);
+  const stops = getStructuredRouteStops(deal);
   const startPort = deal.departure_port ?? stops[0] ?? null;
 
-  if (!deal.itinerary) {
+  if (stops.length === 0 && !deal.itinerary) {
     return { startPort, endPort: null };
   }
 
-  if (/^roundtrip\b/i.test(deal.itinerary.trim())) {
+  if (deal.itinerary && /^roundtrip\b/i.test(deal.itinerary.trim())) {
     return { startPort, endPort: startPort };
   }
 
@@ -272,11 +294,21 @@ function countKeywordMatches(text: string, keywords: string[]): number {
 }
 
 export function matchesRouteRegion(
-  deal: Pick<DealRow, 'deal_name' | 'destination' | 'departure_port' | 'itinerary'>,
+  deal: Pick<
+    DealRow,
+    'deal_name' | 'destination' | 'departure_port' | 'itinerary' | 'route_stops_display'
+  >,
   region: RouteRegion
 ): boolean {
+  const routeStopsText = getStructuredRouteStops(deal).join(' ');
   const searchableText = normalizeSearchText(
-    [deal.deal_name, deal.destination, deal.departure_port, deal.itinerary].join(' ')
+    [
+      deal.deal_name,
+      deal.destination,
+      deal.departure_port,
+      deal.itinerary,
+      routeStopsText,
+    ].join(' ')
   );
   if (!searchableText) return false;
 
@@ -382,12 +414,22 @@ export function compareCabinPriority(a?: string | null, b?: string | null): numb
 }
 
 export function buildRouteLabel(
-  deal: Pick<DealRow, 'departure_port' | 'itinerary'>
+  deal: Pick<DealRow, 'departure_port' | 'itinerary' | 'route_stops_display'>
 ): { routeLabel: string | null; routeType: 'roundtrip' | 'open_jaw' | null } {
+  const stops = getStructuredRouteStops(deal);
   const { startPort, endPort } = getRouteEndpoints(deal);
 
   if (!startPort) {
     return { routeLabel: null, routeType: null };
+  }
+
+  if (stops.length > 2) {
+    return {
+      routeLabel: stops.join(' → '),
+      routeType: isEquivalentLocation(stops[0], stops[stops.length - 1])
+        ? 'roundtrip'
+        : 'open_jaw',
+    };
   }
 
   if (isEquivalentLocation(startPort, endPort)) {

@@ -6,6 +6,7 @@ import type {
   DealRow,
   DestinationSummary,
   PriceHistoryRow,
+  RouteStopDisplay,
   SearchFilters,
   SearchDealsResult,
   TopDrop,
@@ -157,6 +158,100 @@ function attachPerksDisplay<T extends DealRow | TopDrop>(
   return deals;
 }
 
+function hasTable(tableName: string): boolean {
+  const db = getDb();
+  const row = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(tableName);
+  return Boolean(row);
+}
+
+function attachRouteDetails<T extends DealRow | TopDrop>(deals: T[]): T[] {
+  if (deals.length === 0) return deals;
+  if (!hasTable('route_stops') || !hasTable('route_sources')) return deals;
+
+  const db = getDb();
+  const dealIds = deals.map((deal) => deal.id);
+  const placeholders = dealIds.map(() => '?').join(',');
+
+  const stopRows = db
+    .prepare(
+      `SELECT deal_id, seq, port_name, port_id, source, source_url, confidence
+       FROM route_stops
+       WHERE deal_id IN (${placeholders})
+       ORDER BY deal_id, seq`
+    )
+    .all(...dealIds) as {
+    deal_id: string;
+    seq: number;
+    port_name: string;
+    port_id: string | null;
+    source: string;
+    source_url: string | null;
+    confidence: number | null;
+  }[];
+
+  const sourceRows = db
+    .prepare(
+      `SELECT deal_id, provider,
+              COALESCE(official_map_url, source_url) AS source_url,
+              match_score
+       FROM route_sources
+       WHERE deal_id IN (${placeholders})
+       ORDER BY provider = 'official' DESC, id`
+    )
+    .all(...dealIds) as {
+    deal_id: string;
+    provider: string;
+    source_url: string | null;
+    match_score: number | null;
+  }[];
+
+  const stopsByDeal = new Map<string, RouteStopDisplay[]>();
+  for (const row of stopRows) {
+    const stops = stopsByDeal.get(row.deal_id) ?? [];
+    stops.push({
+      seq: row.seq,
+      portName: row.port_name,
+      portId: row.port_id,
+      source: row.source,
+      sourceUrl: row.source_url,
+      confidence: row.confidence,
+    });
+    stopsByDeal.set(row.deal_id, stops);
+  }
+
+  const sourceByDeal = new Map<string, (typeof sourceRows)[number]>();
+  for (const row of sourceRows) {
+    if (!sourceByDeal.has(row.deal_id)) {
+      sourceByDeal.set(row.deal_id, row);
+    }
+  }
+
+  for (const deal of deals) {
+    const stops = stopsByDeal.get(deal.id) ?? [];
+    const routeSource = sourceByDeal.get(deal.id);
+    const stopSourceUrl = stops.find((stop) => stop.sourceUrl)?.sourceUrl ?? null;
+    const stopConfidences = stops
+      .map((stop) => stop.confidence)
+      .filter((value): value is number => value != null);
+
+    deal.route_stops_display = stops.length ? JSON.stringify(stops) : null;
+    deal.route_source = stops[0]?.source ?? routeSource?.provider ?? null;
+    deal.route_source_url = stopSourceUrl ?? routeSource?.source_url ?? deal.deal_url;
+    deal.route_confidence = stopConfidences.length
+      ? Math.min(...stopConfidences)
+      : routeSource?.match_score ?? null;
+    deal.route_completeness = stops.length >= 2
+      ? 'structured'
+      : deal.route_source_url
+        ? 'official_link'
+        : 'missing';
+  }
+
+  return deals;
+}
+
 function addDestinationFilter(
   conditions: string[],
   params: (string | number)[],
@@ -287,7 +382,11 @@ function matchesAdvancedFilters(deal: DealRow, filters: SearchFilters): boolean 
   }
 
   if (filters.itineraryIncludes?.length) {
-    const searchableText = [deal.itinerary, deal.destination].join(' ');
+    const searchableText = [
+      deal.itinerary,
+      deal.route_stops_display,
+      deal.destination,
+    ].join(' ');
     const allIncluded = filters.itineraryIncludes.every((term) =>
       matchesLocation(searchableText, term)
     );
@@ -297,7 +396,11 @@ function matchesAdvancedFilters(deal: DealRow, filters: SearchFilters): boolean 
   }
 
   if (filters.itineraryExcludes?.length) {
-    const searchableText = [deal.itinerary, deal.destination].join(' ');
+    const searchableText = [
+      deal.itinerary,
+      deal.route_stops_display,
+      deal.destination,
+    ].join(' ');
     const hasExcluded = filters.itineraryExcludes.some((term) =>
       matchesLocation(searchableText, term)
     );
@@ -401,15 +504,17 @@ export function searchDeals(filters: SearchFilters): SearchDealsResult {
   const groupedBySailing = !filters.cabinType;
   const sql = buildSearchSql(where, groupedBySailing, filters.locale);
 
-  const baseDeals = (db.prepare(sql).all(...params) as DealRow[]).map((deal) => {
-    const fallbackDestinationName = getDestinationFallbackName(
-      deal.destination_display || deal.destination,
-      filters.locale
-    );
-    return fallbackDestinationName
-      ? { ...deal, destination_display: fallbackDestinationName }
-      : deal;
-  });
+  const baseDeals = attachRouteDetails(
+    (db.prepare(sql).all(...params) as DealRow[]).map((deal) => {
+      const fallbackDestinationName = getDestinationFallbackName(
+        deal.destination_display || deal.destination,
+        filters.locale
+      );
+      return fallbackDestinationName
+        ? { ...deal, destination_display: fallbackDestinationName }
+        : deal;
+    })
+  );
   const advancedFiltered = baseDeals.filter((deal) =>
     matchesAdvancedFilters(deal, filters)
   );
@@ -440,7 +545,7 @@ export function getDealById(dealId: string, locale?: string): DealRow | undefine
     )
     .get(dealId, todayIso()) as DealRow | undefined;
 
-  return deal ? attachPerksDisplay([deal], locale)[0] : undefined;
+  return deal ? attachRouteDetails(attachPerksDisplay([deal], locale))[0] : undefined;
 }
 
 // ─── Brand 查询 ─────────────────────────────────────────
@@ -737,7 +842,7 @@ export function getTopPriceDrops(filters?: {
     )
     .all(...params, limit) as TopDrop[];
 
-  return attachPerksDisplay(drops, filters?.locale);
+  return attachRouteDetails(attachPerksDisplay(drops, filters?.locale));
 }
 
 /** 按趋势统计 deal 数量 */

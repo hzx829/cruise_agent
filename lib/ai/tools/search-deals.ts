@@ -4,11 +4,42 @@ import * as queries from '@/lib/db/queries';
 import { buildRouteLabel, getRouteEndpoints } from '@/lib/cruise/search-utils';
 import { tierSchema } from './schemas';
 
+type RouteStopOutput = {
+  seq: number;
+  portName: string;
+  portId: string | null;
+  source: string;
+  sourceUrl: string | null;
+  confidence: number | null;
+};
+
 function parseStringList(value: string | null | undefined): string[] {
   if (!value) return [];
   try {
     const parsed = JSON.parse(value);
     return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseRouteStops(value: string | null | undefined): RouteStopOutput[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed)
+      ? parsed
+          .map((item) => ({
+            seq: Number(item?.seq ?? 0),
+            portName: String(item?.portName ?? '').trim(),
+            portId: item?.portId ? String(item.portId) : null,
+            source: String(item?.source ?? 'official'),
+            sourceUrl: item?.sourceUrl ? String(item.sourceUrl) : null,
+            confidence:
+              typeof item?.confidence === 'number' ? item.confidence : null,
+          }))
+          .filter((item) => item.portName)
+      : [];
   } catch {
     return [];
   }
@@ -98,6 +129,7 @@ export const searchDeals = tool({
       deals: result.deals.map((d) => {
         const { startPort, endPort } = getRouteEndpoints(d);
         const { routeLabel, routeType } = buildRouteLabel(d);
+        const routeStops = parseRouteStops(d.route_stops_display);
 
         return {
           id: d.id,
@@ -116,6 +148,11 @@ export const searchDeals = tool({
           routeEndPort: endPort,
           routeLabel,
           routeType,
+          routeStops,
+          routeSource: d.route_source,
+          routeSourceUrl: d.route_source_url,
+          routeConfidence: d.route_confidence,
+          routeCompleteness: d.route_completeness,
           destination: d.destination_display || d.destination,
           destinationRaw: d.destination,
           destinationId: d.destination_id || d.primary_destination_term_id,

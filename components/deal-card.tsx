@@ -30,6 +30,18 @@ interface DealData {
   routeEndPort?: string;
   routeLabel?: string | null;
   routeType?: 'roundtrip' | 'open_jaw' | null;
+  routeStops?: {
+    seq: number;
+    portName: string;
+    portId: string | null;
+    source: string;
+    sourceUrl: string | null;
+    confidence: number | null;
+  }[];
+  routeSource?: string | null;
+  routeSourceUrl?: string | null;
+  routeConfidence?: number | null;
+  routeCompleteness?: 'structured' | 'official_link' | 'missing' | null;
   destination?: string;
   destinationRaw?: string;
   destinationId?: string | null;
@@ -110,6 +122,9 @@ export function DealCard({ deal }: { deal: DealData }) {
     deal.currency === 'CNY' ? '¥' : deal.currency === 'EUR' ? '€' : '$';
   const trend = deal.priceTrend ? TREND_CONFIG[deal.priceTrend] : null;
   const tier = deal.brandTier ? TIER_LABELS[deal.brandTier] : null;
+  const routeStopNames = deal.routeStops?.map((stop) => stop.portName).filter(Boolean) ?? [];
+  const routeText = routeStopNames.length > 0 ? routeStopNames.join(' → ') : deal.routeLabel;
+  const routeSourceUrl = deal.routeSourceUrl || deal.dealUrl;
 
   return (
     <div className="rounded-xl border bg-card p-4 shadow-sm transition-shadow hover:shadow-md">
@@ -207,17 +222,31 @@ export function DealCard({ deal }: { deal: DealData }) {
         )}
       </div>
 
-      {deal.routeLabel && (
+      {routeText && (
         <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-muted/35 px-2.5 py-1.5 text-xs text-muted-foreground">
           <Route className="mt-0.5 size-3 shrink-0" />
           <div className="min-w-0">
-            <span className="truncate">{deal.routeLabel}</span>
+            <span className="break-words">{routeText}</span>
             {deal.routeType && (
               <span className="ml-1 text-[11px]">
                 {deal.routeType === 'roundtrip' ? '往返' : '开口'}
               </span>
             )}
           </div>
+        </div>
+      )}
+
+      {!routeText && routeSourceUrl && (
+        <div className="mt-2 flex items-center justify-between gap-2 rounded-lg bg-muted/35 px-2.5 py-1.5 text-xs text-muted-foreground">
+          <span>停靠港待补全</span>
+          <a
+            href={routeSourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex shrink-0 items-center gap-1 text-primary hover:underline"
+          >
+            官网线路 <ExternalLink className="size-3" />
+          </a>
         </div>
       )}
 
