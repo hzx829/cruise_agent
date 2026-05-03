@@ -144,11 +144,20 @@ const WESTERN_MED_KEYWORDS = [
 ];
 
 const CABIN_ALIASES: Record<string, string[]> = {
-  interior: ['interior', 'inside'],
-  oceanview: ['ocean view', 'oceanview', 'outside', 'window'],
-  balcony: ['balcony', 'verandah', 'veranda'],
-  'mini-suite': ['mini suite', 'mini-suite'],
-  suite: ['suite', 'penthouse', 'owners suite', 'signature suite', 'neptune suite'],
+  interior: ['interior', 'inside', '内舱', '内仓', '内房'],
+  oceanview: ['ocean view', 'oceanview', 'outside', 'window', '海景', '海景舱', '海景房', '外舱'],
+  balcony: ['balcony', 'verandah', 'veranda', '阳台', '阳台舱', '阳台房'],
+  'mini-suite': ['mini suite', 'mini-suite', '迷你套房'],
+  suite: [
+    'suite',
+    'penthouse',
+    'owners suite',
+    'signature suite',
+    'neptune suite',
+    'yacht club',
+    '套房',
+    '游艇会',
+  ],
   haven: ['haven'],
 };
 
@@ -380,22 +389,44 @@ export function canonicalizeCabinType(value?: string | null): string {
   if (!normalizedValue) return 'unknown';
 
   if (normalizedValue.includes('haven')) return 'haven';
-  if (normalizedValue.includes('mini suite')) return 'mini-suite';
+  if (
+    normalizedValue.includes('mini suite') ||
+    normalizedValue.includes('迷你套房')
+  ) {
+    return 'mini-suite';
+  }
   if (
     normalizedValue.includes('ocean view') ||
     normalizedValue.includes('oceanview') ||
     normalizedValue.includes('outside') ||
-    normalizedValue.includes('window')
+    normalizedValue.includes('window') ||
+    normalizedValue.includes('海景') ||
+    normalizedValue.includes('外舱')
   ) {
     return 'oceanview';
   }
-  if (normalizedValue.includes('balcony') || normalizedValue.includes('veranda')) {
+  if (
+    normalizedValue.includes('balcony') ||
+    normalizedValue.includes('veranda') ||
+    normalizedValue.includes('阳台')
+  ) {
     return 'balcony';
   }
-  if (normalizedValue.includes('interior') || normalizedValue.includes('inside')) {
+  if (
+    normalizedValue.includes('interior') ||
+    normalizedValue.includes('inside') ||
+    normalizedValue.includes('内舱') ||
+    normalizedValue.includes('内仓') ||
+    normalizedValue.includes('内房')
+  ) {
     return 'interior';
   }
-  if (normalizedValue.includes('suite')) {
+  if (
+    normalizedValue.includes('suite') ||
+    normalizedValue.includes('yacht club') ||
+    normalizedValue.includes('套房') ||
+    normalizedValue.includes('游艇会')
+  ) {
     return 'suite';
   }
 
