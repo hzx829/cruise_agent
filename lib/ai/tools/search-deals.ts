@@ -53,7 +53,7 @@ export const searchDeals = tool({
       .string()
       .optional()
       .describe(
-        '品牌 ID: carnival, ncl, msc, royal_caribbean_cn。MSC 中国站当前没有可查询航线，不要传 msc_cn'
+        '品牌 ID: carnival, ncl, msc, msc_cn, royal_caribbean_cn。MSC 国际站用 msc，MSC 中国站人民币航线用 msc_cn'
       ),
     destination: z
       .string()
