@@ -114,11 +114,29 @@ DOMAIN="你的域名.com"
 
 ### 后续更新代码
 
+Windows / PowerShell 环境推荐使用快速部署脚本：
+
+```powershell
+.\scripts\deploy-fast.ps1
+```
+
+Linux / Bash 环境：
+
 ```bash
 ./scripts/deploy.sh --update
 ```
 
+部署脚本只发布当前 Git `HEAD`，会拒绝未提交的 tracked 改动；未跟踪文件不会被打包上传。远端会先在临时目录安装依赖和构建，构建成功后再替换 `/srv/cruise_agent` 中的代码，并保留运行态 `data/` 目录。
+
 ### 查看运行状态
+
+PowerShell：
+
+```powershell
+.\scripts\deploy-fast.ps1 -Mode status
+```
+
+Bash：
 
 ```bash
 ./scripts/deploy.sh --status

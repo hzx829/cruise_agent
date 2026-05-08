@@ -131,7 +131,7 @@ setup_nginx() {
 # ============================================================
 deploy_update() {
     check_config
-    info "开始部署 cruise_agent..."
+    info "开始快速部署 cruise_agent..."
 
     # 检查 .env.local 是否存在
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -142,47 +142,93 @@ deploy_update() {
         error ".env.local 不存在，请先创建"
     fi
 
-    # 1. 同步代码（排除不需要的目录）
-    info "同步代码到服务器..."
-    rsync -avz --progress \
-        -e "ssh -p ${SERVER_PORT}" \
-        --exclude='.git' \
-        --exclude='node_modules' \
-        --exclude='.next' \
-        --exclude='.env.local' \
-        --exclude='data/' \
-        "${PROJECT_DIR}/" \
-        "${SERVER_USER}@${SERVER_HOST}:${REMOTE_APP_DIR}/"
+    if ! git -C "$PROJECT_DIR" diff --quiet || ! git -C "$PROJECT_DIR" diff --cached --quiet; then
+        error "存在未提交的 tracked 改动。快速部署只发布当前 Git HEAD，请先提交或还原。"
+    fi
 
-    # 2. 同步 .env.local
-    info "同步环境配置..."
-    $SCP "$ENV_FILE" "${SERVER_USER}@${SERVER_HOST}:${REMOTE_APP_DIR}/.env.local"
+    UNTRACKED="$(git -C "$PROJECT_DIR" ls-files --others --exclude-standard)"
+    if [[ -n "$UNTRACKED" ]]; then
+        warn "存在未跟踪文件，将不会部署："
+        echo "$UNTRACKED" | sed 's/^/  - /'
+    fi
 
-    # 确保 DB_PATH 在 .env.local 中已配置
-    $SSH "grep -q '^DB_PATH=' ${REMOTE_APP_DIR}/.env.local || \
-        echo 'DB_PATH=${REMOTE_DATA_DIR}/cruise_deals.db' >> ${REMOTE_APP_DIR}/.env.local"
+    COMMIT="$(git -C "$PROJECT_DIR" rev-parse --short HEAD)"
+    ARCHIVE="${TMPDIR:-/tmp}/cruise_agent_${COMMIT}_$$.tar"
+    REMOTE_ARCHIVE="/tmp/cruise_agent_${COMMIT}.tar"
+    REMOTE_ENV="/tmp/cruise_agent_${COMMIT}.env"
 
-    # 3. 安装依赖 & 构建
-    info "安装依赖..."
-    $SSH "cd ${REMOTE_APP_DIR} && pnpm install --frozen-lockfile"
+    cleanup_local_archive() {
+        rm -f "$ARCHIVE"
+    }
+    trap cleanup_local_archive EXIT
 
-    info "构建应用..."
-    $SSH "cd ${REMOTE_APP_DIR} && pnpm build"
+    # 1. 只打包当前提交，避免同步未跟踪文件和本地构建产物
+    info "打包当前提交 ${COMMIT}..."
+    git -C "$PROJECT_DIR" archive --format=tar --output="$ARCHIVE" HEAD
 
-    # 4. 重启 PM2
-    info "重启服务..."
-    $SSH << REMOTE
-        if pm2 describe ${PM2_APP_NAME} > /dev/null 2>&1; then
-            pm2 reload ${PM2_APP_NAME}
-        else
-            cd ${REMOTE_APP_DIR}
-            pm2 start "pnpm start" --name ${PM2_APP_NAME} --cwd ${REMOTE_APP_DIR}
-            pm2 save
-            pm2 startup systemd -u ${SERVER_USER} --hp /root || true
+    info "上传代码包和环境配置..."
+    $SCP "$ARCHIVE" "${SERVER_USER}@${SERVER_HOST}:${REMOTE_ARCHIVE}"
+    $SCP "$ENV_FILE" "${SERVER_USER}@${SERVER_HOST}:${REMOTE_ENV}"
+
+    info "远端构建并切换发布..."
+    $SSH bash << REMOTE
+set -euo pipefail
+
+REMOTE_APP_DIR="${REMOTE_APP_DIR}"
+REMOTE_DATA_DIR="${REMOTE_DATA_DIR}"
+PM2_APP_NAME="${PM2_APP_NAME}"
+APP_PORT="${APP_PORT}"
+COMMIT="${COMMIT}"
+REMOTE_ARCHIVE="${REMOTE_ARCHIVE}"
+REMOTE_ENV="${REMOTE_ENV}"
+BUILD_DIR="/tmp/cruise_agent_build_\${COMMIT}_\$\$"
+
+rm -rf "\${BUILD_DIR}"
+mkdir -p "\${BUILD_DIR}" "\${REMOTE_APP_DIR}"
+
+tar -xf "\${REMOTE_ARCHIVE}" -C "\${BUILD_DIR}"
+mv "\${REMOTE_ENV}" "\${BUILD_DIR}/.env.local"
+grep -q '^DB_PATH=' "\${BUILD_DIR}/.env.local" || \
+    echo "DB_PATH=\${REMOTE_DATA_DIR}/cruise_deals.db" >> "\${BUILD_DIR}/.env.local"
+echo "\${COMMIT}" > "\${BUILD_DIR}/.deploy-revision"
+
+cd "\${BUILD_DIR}"
+pnpm install --frozen-lockfile
+pnpm build
+
+# 保留运行态 data/agent.db；其余代码和构建产物用当前提交替换。
+find "\${REMOTE_APP_DIR}" -mindepth 1 -maxdepth 1 ! -name 'data' -exec rm -rf {} +
+tar -C "\${BUILD_DIR}" -cf - . | tar -C "\${REMOTE_APP_DIR}" -xf -
+
+rm -rf "\${BUILD_DIR}" "\${REMOTE_ARCHIVE}"
+
+if pm2 describe "\${PM2_APP_NAME}" > /dev/null 2>&1; then
+    pm2 reload "\${PM2_APP_NAME}" --update-env
+else
+    cd "\${REMOTE_APP_DIR}"
+    pm2 start "pnpm start" --name "\${PM2_APP_NAME}" --cwd "\${REMOTE_APP_DIR}"
+    pm2 save
+    pm2 startup systemd -u ${SERVER_USER} --hp /root || true
+fi
+
+for path in /chat /admin/agent-traces /api/admin/agent-traces?limit=1; do
+    ok=0
+    for i in {1..20}; do
+        code=\$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:\${APP_PORT}\${path}")
+        if [[ "\${code}" == "200" ]]; then
+            ok=1
+            break
         fi
+        sleep 1
+    done
+    if [[ "\${ok}" != "1" ]]; then
+        echo "Health check failed: \${path} returned \${code}" >&2
+        exit 1
+    fi
+done
 REMOTE
 
-    success "部署完成！访问 https://${DOMAIN}"
+    success "部署完成：${COMMIT} -> https://${DOMAIN}"
 }
 
 # ============================================================
