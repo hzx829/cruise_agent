@@ -237,6 +237,135 @@ npm run dev
 
 ---
 
+## Phase 7: 自然 Agent 语义边界与可观测性 ✅
+
+> 设计文档：[natural-agent-architecture-plan.md](natural-agent-architecture-plan.md)
+>
+> Smoke cases：[natural-agent-smoke-cases.md](natural-agent-smoke-cases.md)
+
+### 背景
+
+解决“用户问天津港，直连价格源没有天津港报价时，Agent 直接推荐上海出发”的自然问答问题。核心原则是：用户硬约束优先，直连价格源 0 条只代表已接入源没有精确匹配，不能推出市场没有供给。
+
+### 已完成
+
+#### Prompt 契约
+
+- [lib/ai/prompt-template.ts](lib/ai/prompt-template.ts) — 新增“用户约束与数据源边界”：
+  - 港口、品牌、日期、往返、经停、预算、舱型等明确条件默认是硬约束。
+  - 直连价格源 0 条不能说成市场没有船。
+  - 放宽条件后的结果必须单独标注为备选。
+  - 对“不要上海”“只看天津港”“不要联网”等排除条件严格遵守。
+- 新增 3 个 few-shot 示例：
+  - 天津港暑假有船吗？
+  - 不要上海，只看天津港。
+  - 雅典往返，不要开口。
+
+#### `searchDeals` 覆盖语义
+
+- [lib/db/types.ts](lib/db/types.ts) — 新增 `SearchCoverageAnalysis`、`SearchCoverageStatus`、`SearchNoResultReason`。
+- [lib/db/queries.ts](lib/db/queries.ts) — 新增 `analyzeSearchCoverage(filters)`：
+  - 区分 `exact_matches`、`no_exact_match`、`source_gap_possible`。
+  - 识别 `port_not_covered`、`brand_not_covered`、`date_not_covered` 等 0 结果原因。
+  - 返回 `relaxedMatchCounts` 作为解释信号，但不自动放宽用户条件。
+- [lib/ai/tools/search-deals.ts](lib/ai/tools/search-deals.ts) — 工具返回新增：
+  - `appliedFilters`
+  - `exactMatch`
+  - `coverageStatus`
+  - `noResultReason`
+  - `relaxedMatchCounts`
+  - `coverageNotes`
+
+#### `webSearch` 航线供给增强
+
+- [lib/ai/tools/web-search.ts](lib/ai/tools/web-search.ts) — schema 增强：
+  - `purpose`: `official_schedule` / `market_supply` / `review` / `travel` / `news` / `general`
+  - `sourcePreference`: `official_first` / `professional_first` / `general`
+  - `mustIncludeTerms`
+  - `preferredDomains`
+  - `recency`
+- 返回结果标准化为 `sources`：
+  - `domain`
+  - `sourceType`: `official_cruise_line` / `official_port` / `ota` / `industry_media` / `review_site` / `general_web`
+  - `publishedDate`
+  - `snippet`
+
+#### 轻量意图识别与工具路由
+
+- [lib/ai/intent.ts](lib/ai/intent.ts) — 新增确定性意图识别：
+  - `price_quote`
+  - `market_supply`
+  - `review`
+  - `comparison`
+  - `copywriting`
+  - `analytics`
+  - `general`
+- 同时抽取轻量硬约束：
+  - `departurePort`
+  - `brand`
+  - `dateRange`
+  - `roundtrip`
+  - `itineraryIncludes`
+  - `excludedTerms`
+  - `allowRelaxation`
+  - `needsWeb`
+  - `disableWeb`
+- [lib/ai/agent.ts](lib/ai/agent.ts) — 使用 `prepareStep.activeTools` 控制工具集合：
+  - `market_supply` 暴露 `searchDeals + webSearch`。
+  - `review/comparison` 暴露 `webSearch + cruiseEncyclopedia`。
+  - `price_quote` 先暴露 DB 工具；若 `searchDeals` 出现覆盖缺口，再开放 `webSearch`。
+  - `disableWeb=true` 时移除 `webSearch/cruiseEncyclopedia`。
+- [app/api/chat/route.ts](app/api/chat/route.ts) — 从最新用户消息构建 `intentContext` 并注入 Agent。
+
+#### Agent Trace 可观测性
+
+- [lib/db/agent-db.ts](lib/db/agent-db.ts) — `agent.db` 新增：
+  - `agent_runs`
+  - `agent_steps`
+- [lib/db/agent-trace-store.ts](lib/db/agent-trace-store.ts) — 新增 trace 写入：
+  - `createAgentRun()`
+  - `saveAgentStep()`
+  - 工具输出只保存摘要，避免把大段搜索结果和 deal 列表完整写库。
+- [app/api/chat/route.ts](app/api/chat/route.ts) — `onStepFinish` 持久化每步工具调用摘要。
+
+#### Smoke Cases
+
+- [natural-agent-smoke-cases.md](natural-agent-smoke-cases.md) — 新增 12 条手工回归用例：
+  - 天津港有船吗？
+  - 天津港暑假最便宜的船
+  - 不要上海，只看天津港
+  - 上海也可以，天津优先
+  - 天津港皇家加勒比有吗
+  - MSC 中国母港有哪些
+  - 雅典往返，不要开口
+  - 经停圣托里尼
+  - 皇家和 MSC 餐饮哪个好
+  - 这条 deal 值得买吗
+  - 不要联网，只看你接入的价格源
+  - 帮我查网络上天津港最新邮轮信息
+
+### 提交与部署
+
+- `229c201` — `Improve natural agent source boundaries`
+- `df52072` — `Add intent-aware tool routing`
+- `42d29f4` — `Persist agent tool traces`
+
+生产部署验证：
+
+- 远端 `/srv/cruise_agent` `pnpm build` 通过。
+- `pm2 restart cruise_agent --update-env` 成功。
+- `http://127.0.0.1:3000/chat` 健康检查返回 `200`。
+- 远端 `agent.db` 已创建 `agent_runs` / `agent_steps`。
+
+### 后续
+
+- [ ] 将 12 条 smoke cases 自动化为 eval。
+- [ ] 增加 trace 查询/导出入口，方便定位“工具没调/搜索无结果/合成违约”。
+- [ ] 增加 thumbs up/down 与失败原因收集。
+- [ ] 修复既有 lint warning：`lib/ai/tools/cruise-encyclopedia.ts` 的 `_topic` 未使用。
+
+---
+
 ## Phase 4: 待规划
 
 - [ ] 搜索结果缓存（减少 Tavily API 调用次数）

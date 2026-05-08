@@ -3,6 +3,24 @@
 > 版本：2026-05-08  
 > 目标：让 agent 先回答用户真正问的问题，把直连价格源、网络搜索、专业百科都当作工具，而不是把数据库覆盖范围当作事实边界。
 
+## 0. 落地状态（2026-05-08）
+
+当前已完成第一轮最小可用改造，并已部署到生产环境：
+
+- `229c201 Improve natural agent source boundaries`
+  - 完成 prompt 行为契约、`searchDeals` 覆盖语义、`webSearch` 航线供给 schema 与来源标准化。
+- `df52072 Add intent-aware tool routing`
+  - 新增轻量意图识别与 `prepareStep.activeTools` 工具集合控制。
+- `42d29f4 Persist agent tool traces`
+  - 新增 `agent_runs` / `agent_steps`，持久化工具调用 trace 摘要。
+
+生产验证：
+
+- 远端 `/srv/cruise_agent` 构建通过。
+- PM2 应用 `cruise_agent` 已重启并在线。
+- `http://127.0.0.1:3000/chat` 健康检查返回 `200`。
+- 远端 `agent.db` 已创建 `agent_runs` 与 `agent_steps` 表。
+
 ## 1. 背景与问题
 
 当前 agent 已经有 `searchDeals`、`webSearch`、`cruiseEncyclopedia` 等工具，也已经在 prompt 中写了“直连价格源 0 条时再搜索”。但实际体验仍可能出现类似问题：
@@ -28,6 +46,19 @@
 - `lib/ai/agent.ts`：使用 `ToolLoopAgent`，目前主要靠 prompt 和工具描述让模型自行路由；没有使用 `prepareStep`、`activeTools` 或持久化 step trace。
 
 结论：第一阶段不需要推翻架构，但需要把“自然问答契约”写进 prompt、工具 schema、工具返回结构和测试集中，而不是只靠一段兜底描述。
+
+### 2.1 最新实现观察
+
+截至 2026-05-08，现有实现已经从“纯 prompt 约束”推进到“prompt + 工具 schema + 运行时路由 + trace”：
+
+- `lib/ai/prompt-template.ts`：已加入“用户约束与数据源边界”和 3 个关键 few-shot 示例。
+- `lib/ai/tools/search-deals.ts`：已返回 `appliedFilters`、`exactMatch`、`coverageStatus`、`noResultReason`、`coverageNotes`。
+- `lib/db/queries.ts`：已新增 `analyzeSearchCoverage(filters)`，对品牌、出发港、日期等覆盖缺口做轻量分析。
+- `lib/ai/tools/web-search.ts`：已增强 `purpose/sourcePreference/mustIncludeTerms/preferredDomains/recency`，并返回标准化 `sources`。
+- `lib/ai/intent.ts`：已新增轻量意图和硬约束识别。
+- `lib/ai/agent.ts`：已通过 `prepareStep.activeTools` 控制不同意图下可用工具集合。
+- `lib/db/agent-db.ts` 与 `lib/db/agent-trace-store.ts`：已新增 agent run/step trace 持久化。
+- `natural-agent-smoke-cases.md`：已沉淀 12 条手工 smoke cases。
 
 ## 3. 外部最佳实践要点
 
@@ -354,26 +385,26 @@ CREATE TABLE agent_steps (
 
 ### P0：1 天内
 
-- 改 prompt：加入“用户约束与数据源边界”。
-- 改 `webSearch.description`：明确支持港口/母港/航线供给查询。
-- 改 `searchDeals.description`：说明 0 条结果语义。
-- 加 12 条手工 smoke case 到文档或测试脚本。
+- [x] 改 prompt：加入“用户约束与数据源边界”。
+- [x] 改 `webSearch.description`：明确支持港口/母港/航线供给查询。
+- [x] 改 `searchDeals.description`：说明 0 条结果语义。
+- [x] 加 12 条手工 smoke case 到 `natural-agent-smoke-cases.md`。
 
 验收：天津港问题不会直接跳到上海；如果给上海，必须是放宽条件后的备选。
 
 ### P1：2 到 3 天
 
-- 扩展 `searchDeals` 返回 `appliedFilters`、`coverageStatus`、`noResultReason`。
-- 增强 `webSearch` schema，增加 `purpose/sourcePreference/mustIncludeTerms`。
-- 标准化 web source 输出，包含 `domain/sourceType/publishedDate`。
+- [x] 扩展 `searchDeals` 返回 `appliedFilters`、`coverageStatus`、`noResultReason`。
+- [x] 增强 `webSearch` schema，增加 `purpose/sourcePreference/mustIncludeTerms`。
+- [x] 标准化 web source 输出，包含 `domain/sourceType/publishedDate`。
 
 验收：模型能在回答中说清楚“为什么直连源没有”和“网络来源是什么”。
 
 ### P2：3 到 5 天
 
-- 增加 intent extraction。
-- 用 `prepareStep` 或请求级 active tools 控制工具集合。
-- 增加 agent run/step trace 持久化。
+- [x] 增加 intent extraction。
+- [x] 用 `prepareStep` / `activeTools` 控制工具集合。
+- [x] 增加 agent run/step trace 持久化。
 
 验收：工具路由可解释，可回放；不同问题类型的误触发明显下降。
 
@@ -382,6 +413,8 @@ CREATE TABLE agent_steps (
 - 把 smoke cases 自动化为 eval。
 - 增加 thumbs up/down 和失败原因收集。
 - 对常见失败类型做 evaluator-optimizer 式离线评估。
+- 增加 trace 查询/导出入口，便于从 UI 或管理端快速定位工具路由问题。
+- 修复既有 lint warning：`lib/ai/tools/cruise-encyclopedia.ts` 中 `_topic` 未使用。
 
 验收：prompt/工具改动前后能量化比较，不靠单次聊天体感。
 
