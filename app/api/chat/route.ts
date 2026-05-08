@@ -6,6 +6,7 @@ import {
 import { createZhipu } from 'zhipu-ai-provider';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createCruiseAgent } from '@/lib/ai/agent';
+import { detectCruiseIntent } from '@/lib/ai/intent';
 import { loadChat, saveMessages, updateChatTitle, createChat } from '@/lib/db/chat-store';
 
 export const maxDuration = 60;
@@ -36,10 +37,13 @@ function getModel() {
 /**
  * 从首条用户消息中提取纯文本用作 Chat 标题 (截取前 50 字符)
  */
-function extractTitle(message: UIMessage): string {
+function extractMessageText(message: UIMessage): string {
   const textPart = message.parts.find((p) => p.type === 'text');
-  const text = textPart && 'text' in textPart ? textPart.text : '';
-  return text.slice(0, 50) || 'New Chat';
+  return textPart && 'text' in textPart ? textPart.text : '';
+}
+
+function extractTitle(message: UIMessage): string {
+  return extractMessageText(message).slice(0, 50) || 'New Chat';
 }
 
 export async function POST(req: Request) {
@@ -67,7 +71,11 @@ export async function POST(req: Request) {
 
   // 使用 ToolLoopAgent 替代手动 streamText
   // Agent 自动管理工具循环、上下文和停止条件
-  const agent = createCruiseAgent(getModel());
+  const latestUserText = extractMessageText(message);
+  const intentContext = latestUserText
+    ? detectCruiseIntent(latestUserText)
+    : undefined;
+  const agent = createCruiseAgent(getModel(), { intentContext });
 
   return createAgentUIStreamResponse({
     agent,
