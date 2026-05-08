@@ -17,6 +17,7 @@ REMOTE_APP_DIR="/srv/cruise_agent"
 REMOTE_DATA_DIR="/data"
 DOMAIN="www.cruiseswift.com"
 APP_PORT=3000
+PM2_APP_NAME="cruise_agent"
 
 # ---- 颜色输出 ----
 RED='\033[0;31m'
@@ -170,14 +171,14 @@ deploy_update() {
 
     # 4. 重启 PM2
     info "重启服务..."
-    $SSH << 'REMOTE'
-        if pm2 describe cruise-agent > /dev/null 2>&1; then
-            pm2 reload cruise-agent
+    $SSH << REMOTE
+        if pm2 describe ${PM2_APP_NAME} > /dev/null 2>&1; then
+            pm2 reload ${PM2_APP_NAME}
         else
-            cd /srv/cruise_agent
-            pm2 start "pnpm start" --name cruise-agent --cwd /srv/cruise_agent
+            cd ${REMOTE_APP_DIR}
+            pm2 start "pnpm start" --name ${PM2_APP_NAME} --cwd ${REMOTE_APP_DIR}
             pm2 save
-            pm2 startup | tail -1 | bash || true
+            pm2 startup systemd -u ${SERVER_USER} --hp /root || true
         fi
 REMOTE
 
@@ -193,7 +194,7 @@ show_status() {
     $SSH "pm2 list"
     echo ""
     info "=== 最近日志（最后 30 行）==="
-    $SSH "pm2 logs cruise-agent --lines 30 --nostream"
+    $SSH "pm2 logs ${PM2_APP_NAME} --lines 30 --nostream"
     echo ""
     info "=== 数据库信息 ==="
     $SSH "ls -lh ${REMOTE_DATA_DIR}/cruise_deals.db 2>/dev/null || echo '数据库文件不存在'"
