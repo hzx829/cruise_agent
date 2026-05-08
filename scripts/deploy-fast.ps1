@@ -199,7 +199,7 @@ pm2 save
 for path in /chat /admin/agent-traces /api/admin/agent-traces?limit=1; do
   ok=0
   for i in {1..20}; do
-    code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${APP_PORT}${path}")
+    code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${APP_PORT}${path}" || true)
     if [[ "${code}" == "200" ]]; then
       ok=1
       break
