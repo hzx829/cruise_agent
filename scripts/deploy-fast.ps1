@@ -164,6 +164,7 @@ pnpm build
 # Preserve runtime data such as data/agent.db; replace everything else from the built commit.
 find "${APP_DIR}" -mindepth 1 -maxdepth 1 ! -name 'data' -exec rm -rf {} +
 tar -C "${BUILD_DIR}" -cf - . | tar -C "${APP_DIR}" -xf -
+cd /
 rm -rf "${BUILD_DIR}" "${ARCHIVE}"
 
 APP_IDS=$(pm2 jlist | node -e "let s=''; process.stdin.on('data', d => s += d); process.stdin.on('end', () => { const name = process.argv[1]; const ids = JSON.parse(s).filter(p => p.name === name).map(p => p.pm_id); console.log(ids.join(' ')); });" "${PM2_APP_NAME}")
