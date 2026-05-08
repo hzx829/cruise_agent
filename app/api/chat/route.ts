@@ -8,6 +8,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { createCruiseAgent } from '@/lib/ai/agent';
 import { detectCruiseIntent } from '@/lib/ai/intent';
 import { loadChat, saveMessages, updateChatTitle, createChat } from '@/lib/db/chat-store';
+import { createAgentRun, saveAgentStep } from '@/lib/db/agent-trace-store';
 
 export const maxDuration = 60;
 
@@ -76,11 +77,32 @@ export async function POST(req: Request) {
     ? detectCruiseIntent(latestUserText)
     : undefined;
   const agent = createCruiseAgent(getModel(), { intentContext });
+  const runId = createAgentRun({
+    chatId: id,
+    model: `${process.env.AI_PROVIDER || 'zhipu'}/${process.env.CHAT_MODEL || 'glm-4-flash'}`,
+    userQuery: latestUserText,
+    detectedIntent: intentContext?.intent,
+  });
 
   return createAgentUIStreamResponse({
     agent,
     uiMessages: allMessages,
     generateMessageId,
+    onStepFinish: async ({ stepNumber, toolResults }) => {
+      try {
+        for (const toolResult of toolResults ?? []) {
+          saveAgentStep({
+            runId,
+            stepNumber,
+            toolName: toolResult.toolName,
+            toolInput: toolResult.input,
+            toolOutput: toolResult.output,
+          });
+        }
+      } catch (error) {
+        console.error('[agent-trace] failed to persist step', error);
+      }
+    },
     onFinish: async ({ messages: finishedMessages }) => {
       // 找出 AI 回复的新消息并保存
       const existingIds = new Set(allMessages.map((m) => m.id));

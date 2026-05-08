@@ -86,6 +86,34 @@ agentDb.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_agent_prompts_status_version
     ON agent_prompts(status, version DESC);
+
+  CREATE TABLE IF NOT EXISTS agent_runs (
+    id TEXT PRIMARY KEY,
+    chat_id TEXT,
+    prompt_id TEXT,
+    model TEXT,
+    user_query TEXT,
+    detected_intent TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE SET NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_agent_runs_chat_id ON agent_runs(chat_id);
+  CREATE INDEX IF NOT EXISTS idx_agent_runs_created_at ON agent_runs(created_at);
+
+  CREATE TABLE IF NOT EXISTS agent_steps (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    step_number INTEGER NOT NULL,
+    tool_name TEXT,
+    tool_input_json TEXT,
+    tool_output_summary_json TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (run_id) REFERENCES agent_runs(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_agent_steps_run_id ON agent_steps(run_id);
+  CREATE INDEX IF NOT EXISTS idx_agent_steps_tool_name ON agent_steps(tool_name);
 `);
 
 export default agentDb;
