@@ -53,13 +53,14 @@ async function tavilySearch(params: {
 
 /**
  * 通用网络搜索工具
- * 用于回答非价格类的开放性邮轮问题
+ * 用于回答开放性邮轮问题，也可在直连价格源没有收录时补充航线供给信息
  *
- * ⚠️ 严禁用于查询价格 — 价格数据只能来自爬虫数据库
+ * ⚠️ 不作为优先价格源。只有直连价格源无结果/覆盖不足时，才可补充网络参考信息。
  */
 export const webSearch = tool({
   description: `在互联网上搜索邮轮相关信息。
 适用于回答以下类型的问题：
+- 直连价格源没有收录时，补充查询从某港口/母港出发的邮轮、船司、班期或官方入口
 - 邮轮品牌评测、船只设施、餐饮风格、娱乐活动
 - 目的地攻略、最佳旅游季节、港口周边玩法
 - 两艘船/两个品牌的非价格维度对比
@@ -67,8 +68,9 @@ export const webSearch = tool({
 - 穿搭建议、登船须知、晕船应对
 - 邮轮术语解释、新手入门知识
 
-⚠️ 严禁用此工具查询价格、报价、特价、折扣等！
-   价格信息必须使用 searchDeals、getTopPriceDrops 等数据库工具。`,
+⚠️ 价格/报价/特价/折扣等问题必须先使用 searchDeals、getTopPriceDrops 等直连价格工具。
+   当直连价格源返回 0 条或明显没有覆盖用户指定港口时，可以用此工具做兜底搜索；
+   兜底搜索结果必须标注为网络参考，不要声称是直连实时价格。`,
   inputSchema: z.object({
     query: z.string().describe('搜索关键词。建议使用英文或中英混合，以获取更丰富的结果。例如："Royal Caribbean vs MSC dining experience"'),
     searchDepth: z
