@@ -190,6 +190,8 @@ tar -xf "\${REMOTE_ARCHIVE}" -C "\${BUILD_DIR}"
 mv "\${REMOTE_ENV}" "\${BUILD_DIR}/.env.local"
 grep -q '^DB_PATH=' "\${BUILD_DIR}/.env.local" || \
     echo "DB_PATH=\${REMOTE_DATA_DIR}/cruise_deals.db" >> "\${BUILD_DIR}/.env.local"
+grep -q '^AGENT_DB_PATH=' "\${BUILD_DIR}/.env.local" || \
+    echo "AGENT_DB_PATH=\${REMOTE_DATA_DIR}/agent.db" >> "\${BUILD_DIR}/.env.local"
 echo "\${COMMIT}" > "\${BUILD_DIR}/.deploy-revision"
 
 cd "\${BUILD_DIR}"

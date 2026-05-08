@@ -109,8 +109,12 @@ done
 echo
 
 echo "== Trace counts =="
+AGENT_DB_PATH_VALUE=$(grep -m1 '^AGENT_DB_PATH=' "${APP_DIR}/.env.local" 2>/dev/null | cut -d= -f2- || true)
+if [[ -z "${AGENT_DB_PATH_VALUE}" ]]; then
+  AGENT_DB_PATH_VALUE="${APP_DIR}/data/agent.db"
+fi
 cd "${APP_DIR}"
-node -e "const Database=require('better-sqlite3'); const db=new Database(process.env.AGENT_DB_PATH || 'data/agent.db',{readonly:true}); console.log('agent_runs='+db.prepare('select count(*) as c from agent_runs').get().c); console.log('agent_steps='+db.prepare('select count(*) as c from agent_steps').get().c); db.close();"
+node -e "const Database=require('better-sqlite3'); const db=new Database(process.argv[1],{readonly:true}); console.log('agent_db='+process.argv[1]); console.log('agent_runs='+db.prepare('select count(*) as c from agent_runs').get().c); console.log('agent_steps='+db.prepare('select count(*) as c from agent_steps').get().c); db.close();" "${AGENT_DB_PATH_VALUE}"
 '@
 
   RunSshScript $script "'$RemoteAppDir' '$Pm2AppName' '$AppPort'"
@@ -169,6 +173,7 @@ mkdir -p "${BUILD_DIR}" "${APP_DIR}"
 tar -xf "${ARCHIVE}" -C "${BUILD_DIR}"
 mv "${ENV_FILE}" "${BUILD_DIR}/.env.local"
 grep -q '^DB_PATH=' "${BUILD_DIR}/.env.local" || echo "DB_PATH=${DATA_DIR}/cruise_deals.db" >> "${BUILD_DIR}/.env.local"
+grep -q '^AGENT_DB_PATH=' "${BUILD_DIR}/.env.local" || echo "AGENT_DB_PATH=${DATA_DIR}/agent.db" >> "${BUILD_DIR}/.env.local"
 echo "${COMMIT}" > "${BUILD_DIR}/.deploy-revision"
 
 cd "${BUILD_DIR}"
