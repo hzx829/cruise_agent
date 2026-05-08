@@ -37,6 +37,7 @@ SCP="scp -P ${SERVER_PORT}"
 check_config() {
     [[ -z "$SERVER_HOST" ]] && error "请先在脚本顶部填写 SERVER_HOST（服务器 IP）"
     [[ -z "$DOMAIN" ]]      && error "请先在脚本顶部填写 DOMAIN（域名）"
+    return 0
 }
 
 # ============================================================
@@ -143,6 +144,7 @@ deploy_update() {
     # 1. 同步代码（排除不需要的目录）
     info "同步代码到服务器..."
     rsync -avz --progress \
+        -e "ssh -p ${SERVER_PORT}" \
         --exclude='.git' \
         --exclude='node_modules' \
         --exclude='.next' \
