@@ -14,6 +14,15 @@ const CRUISE_EXPERT_DOMAINS = [
   'seatrade-cruise.com',    // 邮轮行业媒体
 ];
 
+const TOPIC_QUERY_HINTS: Record<string, string> = {
+  ship_specs: 'ship specifications deck plan tonnage capacity',
+  brand_review: 'review dining service cabins pros cons',
+  onboard_life: 'onboard dining entertainment activities service review',
+  destination: 'port destination cruise itinerary guide',
+  industry: 'cruise industry news deployment market',
+  general: '',
+};
+
 interface TavilyResult {
   title: string;
   url: string;
@@ -93,7 +102,7 @@ export const cruiseEncyclopedia = tool({
       .optional()
       .describe('指定的船只名或品牌名，会自动加入搜索关键词，如 "MSC Seashore" 或 "Celebrity Cruises"'),
   }),
-  execute: async ({ query, topic: _topic, shipOrBrand }) => {
+  execute: async ({ query, topic, shipOrBrand }) => {
     if (!process.env.TAVILY_API_KEY) {
       return {
         available: false,
@@ -103,7 +112,10 @@ export const cruiseEncyclopedia = tool({
     }
 
     // 自动拼接船名/品牌名
-    const fullQuery = shipOrBrand ? `${shipOrBrand} ${query}` : `cruise ${query}`;
+    const topicHint = topic ? TOPIC_QUERY_HINTS[topic] : '';
+    const fullQuery = [shipOrBrand ?? 'cruise', query, topicHint]
+      .filter(Boolean)
+      .join(' ');
 
     const data = await tavilySearchDomain({
       query: fullQuery,
@@ -113,6 +125,7 @@ export const cruiseEncyclopedia = tool({
     return {
       available: true,
       query: fullQuery,
+      topic: topic ?? 'general',
       summary: data.answer ?? null,
       results: data.results.map((r) => ({
         title: r.title,

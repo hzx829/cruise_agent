@@ -24,3 +24,17 @@
 - Search fallback：直连价格源 0 条或覆盖不足时，是否按原约束查 web。
 - Alternative labeling：放宽条件结果是否单独标成“放宽条件后的备选”。
 - Citation quality：网络信息是否提供来源域名/链接，并避免把网络内容说成官网实时数据。
+
+## Trace Eval
+
+跑完这些用例后，可以用下面的脚本检查最近一次真实 run 的 intent、工具调用、关键 tool input 和部分回答禁用词：
+
+```bash
+npm run eval:natural-agent
+```
+
+本地数据库还没有完整跑过用例时，可先用允许缺失模式确认脚本本身可执行：
+
+```bash
+npm run eval:natural-agent -- --allow-missing
+```

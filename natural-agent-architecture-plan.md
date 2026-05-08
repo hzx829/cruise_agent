@@ -58,7 +58,9 @@
 - `lib/ai/intent.ts`：已新增轻量意图和硬约束识别。
 - `lib/ai/agent.ts`：已通过 `prepareStep.activeTools` 控制不同意图下可用工具集合。
 - `lib/db/agent-db.ts` 与 `lib/db/agent-trace-store.ts`：已新增 agent run/step trace 持久化。
-- `natural-agent-smoke-cases.md`：已沉淀 12 条手工 smoke cases。
+- `app/admin/agent-traces` 与 `app/api/admin/agent-traces`：已新增 trace 查询与 CSV 导出入口，支持按 query、intent、tool 筛选。
+- `lib/ai/tools/cruise-encyclopedia.ts`：已修复 `_topic` 未使用问题，并让 topic 参与专业站点搜索词增强。
+- `natural-agent-smoke-cases.md` 与 `scripts/evaluate-natural-agent-traces.mjs`：已沉淀 12 条 smoke cases，并提供基于真实 trace 的离线回归检查。
 
 ## 3. 外部最佳实践要点
 
@@ -410,11 +412,11 @@ CREATE TABLE agent_steps (
 
 ### P3：持续优化
 
-- 把 smoke cases 自动化为 eval。
+- [x] 把 smoke cases 自动化为 trace-based eval。
 - 增加 thumbs up/down 和失败原因收集。
 - 对常见失败类型做 evaluator-optimizer 式离线评估。
-- 增加 trace 查询/导出入口，便于从 UI 或管理端快速定位工具路由问题。
-- 修复既有 lint warning：`lib/ai/tools/cruise-encyclopedia.ts` 中 `_topic` 未使用。
+- [x] 增加 trace 查询/导出入口，便于从 UI 或管理端快速定位工具路由问题。
+- [x] 修复既有 lint warning：`lib/ai/tools/cruise-encyclopedia.ts` 中 `_topic` 未使用。
 
 验收：prompt/工具改动前后能量化比较，不靠单次聊天体感。
 
