@@ -158,7 +158,7 @@ deploy_update() {
     $SCP "$ENV_FILE" "${SERVER_USER}@${SERVER_HOST}:${REMOTE_APP_DIR}/.env.local"
 
     # 确保 DB_PATH 在 .env.local 中已配置
-    $SSH "grep -q 'DB_PATH' ${REMOTE_APP_DIR}/.env.local || \
+    $SSH "grep -q '^DB_PATH=' ${REMOTE_APP_DIR}/.env.local || \
         echo 'DB_PATH=${REMOTE_DATA_DIR}/cruise_deals.db' >> ${REMOTE_APP_DIR}/.env.local"
 
     # 3. 安装依赖 & 构建
