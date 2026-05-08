@@ -38,13 +38,27 @@ function RunNative([string]$Command, [string[]]$CommandArgs) {
 function RunSshScript([string]$Script, [string]$ArgsLine = '') {
   $target = "$ServerUser@$ServerHost"
   $normalizedScript = $Script -replace "`r`n", "`n"
-  if ($ArgsLine) {
-    $normalizedScript | & ssh -p $ServerPort $target "bash -s -- $ArgsLine"
-  } else {
-    $normalizedScript | & ssh -p $ServerPort $target 'bash -s'
-  }
-  if ($LASTEXITCODE -ne 0) {
-    throw "remote script failed with exit code $LASTEXITCODE"
+  $localScript = Join-Path $env:TEMP "cruise_agent_remote_$PID.sh"
+  $remoteScript = "/tmp/cruise_agent_remote_$PID.sh"
+  $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+
+  [System.IO.File]::WriteAllText($localScript, $normalizedScript, $utf8NoBom)
+
+  try {
+    RunNative 'scp' @('-P', "$ServerPort", $localScript, "${target}:$remoteScript")
+
+    if ($ArgsLine) {
+      & ssh -p $ServerPort $target "bash '$remoteScript' $ArgsLine; rc=`$?; rm -f '$remoteScript'; exit `$rc"
+    } else {
+      & ssh -p $ServerPort $target "bash '$remoteScript'; rc=`$?; rm -f '$remoteScript'; exit `$rc"
+    }
+    if ($LASTEXITCODE -ne 0) {
+      throw "remote script failed with exit code $LASTEXITCODE"
+    }
+  } finally {
+    if (Test-Path -LiteralPath $localScript) {
+      Remove-Item -LiteralPath $localScript -Force
+    }
   }
 }
 
