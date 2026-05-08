@@ -143,9 +143,56 @@ export interface SearchFilters {
   limit?: number;
 }
 
+export interface SearchAppliedFilters {
+  brand?: string;
+  destination?: string;
+  destinationId?: string;
+  departurePort?: string;
+  arrivalPort?: string;
+  itineraryIncludes?: string[];
+  itineraryExcludes?: string[];
+  priceMin?: number;
+  priceMax?: number;
+  sailDateFrom?: string;
+  sailDateTo?: string;
+  durationMin?: number;
+  durationMax?: number;
+  cabinType?: string;
+  roundtrip?: boolean;
+  routeRegion?: 'aegean' | 'eastern_mediterranean' | 'western_mediterranean';
+  priceTrend?: string;
+  tier?: string | string[];
+}
+
+export type SearchCoverageStatus =
+  | 'exact_matches'
+  | 'no_exact_match'
+  | 'source_gap_possible';
+
+export type SearchNoResultReason =
+  | 'no_matching_sailing'
+  | 'port_not_covered'
+  | 'brand_not_covered'
+  | 'date_not_covered'
+  | 'unknown';
+
+export interface SearchCoverageAnalysis {
+  appliedFilters: SearchAppliedFilters;
+  exactMatch: boolean;
+  coverageStatus: SearchCoverageStatus;
+  noResultReason?: SearchNoResultReason;
+  relaxedMatchCounts: {
+    byBrand?: number;
+    byDeparturePort?: number;
+    withoutDate?: number;
+  };
+  notes: string[];
+}
+
 export interface SearchDealsResult {
   totalMatches: number;
   deals: DealRow[];
+  coverage: SearchCoverageAnalysis;
 }
 
 export interface TrackingStats {

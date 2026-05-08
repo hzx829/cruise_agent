@@ -7,6 +7,8 @@ import type {
   DestinationSummary,
   PriceHistoryRow,
   RouteStopDisplay,
+  SearchAppliedFilters,
+  SearchCoverageAnalysis,
   SearchFilters,
   SearchDealsResult,
   TopDrop,
@@ -574,7 +576,140 @@ function buildSearchSql(
   `;
 }
 
-export function searchDeals(filters: SearchFilters): SearchDealsResult {
+type SearchDealsCoreResult = Omit<SearchDealsResult, 'coverage'>;
+
+function buildAppliedFilters(filters: SearchFilters): SearchAppliedFilters {
+  const applied: SearchAppliedFilters = {};
+
+  if (filters.brand) applied.brand = filters.brand;
+  if (filters.destination) applied.destination = filters.destination;
+  if (filters.destinationId) applied.destinationId = filters.destinationId;
+  if (filters.departurePort) applied.departurePort = filters.departurePort;
+  if (filters.arrivalPort) applied.arrivalPort = filters.arrivalPort;
+  if (filters.itineraryIncludes?.length) {
+    applied.itineraryIncludes = filters.itineraryIncludes;
+  }
+  if (filters.itineraryExcludes?.length) {
+    applied.itineraryExcludes = filters.itineraryExcludes;
+  }
+  if (filters.priceMin != null) applied.priceMin = filters.priceMin;
+  if (filters.priceMax != null) applied.priceMax = filters.priceMax;
+  if (filters.sailDateFrom) applied.sailDateFrom = filters.sailDateFrom;
+  if (filters.sailDateTo) applied.sailDateTo = filters.sailDateTo;
+  if (filters.durationMin != null) applied.durationMin = filters.durationMin;
+  if (filters.durationMax != null) applied.durationMax = filters.durationMax;
+  if (filters.cabinType) applied.cabinType = filters.cabinType;
+  if (filters.roundtrip != null) applied.roundtrip = filters.roundtrip;
+  if (filters.routeRegion) applied.routeRegion = filters.routeRegion;
+  if (filters.priceTrend) applied.priceTrend = filters.priceTrend;
+  if (filters.tier) applied.tier = filters.tier;
+
+  return applied;
+}
+
+function countDealsForCoverage(filters: SearchFilters): number {
+  return searchDealsCore({
+    ...filters,
+    limit: 1,
+  }).totalMatches;
+}
+
+export function analyzeSearchCoverage(
+  filters: SearchFilters,
+  exactMatchCount?: number
+): SearchCoverageAnalysis {
+  const appliedFilters = buildAppliedFilters(filters);
+  const exactMatches = exactMatchCount ?? countDealsForCoverage(filters);
+  const relaxedMatchCounts: SearchCoverageAnalysis['relaxedMatchCounts'] = {};
+
+  if (exactMatches > 0) {
+    return {
+      appliedFilters,
+      exactMatch: true,
+      coverageStatus: 'exact_matches',
+      relaxedMatchCounts,
+      notes: ['直连价格源存在符合用户原始条件的精确结果。'],
+    };
+  }
+
+  if (filters.brand) {
+    relaxedMatchCounts.byBrand = countDealsForCoverage({
+      locale: filters.locale,
+      brand: filters.brand,
+    });
+
+    if (relaxedMatchCounts.byBrand === 0) {
+      return {
+        appliedFilters,
+        exactMatch: false,
+        coverageStatus: 'source_gap_possible',
+        noResultReason: 'brand_not_covered',
+        relaxedMatchCounts,
+        notes: [
+          '直连价格源暂未收录该品牌的可报价航次；这只能说明已接入源覆盖不足，不能推出市场没有。',
+        ],
+      };
+    }
+  }
+
+  if (filters.departurePort) {
+    relaxedMatchCounts.byDeparturePort = countDealsForCoverage({
+      locale: filters.locale,
+      departurePort: filters.departurePort,
+    });
+
+    if (relaxedMatchCounts.byDeparturePort === 0) {
+      return {
+        appliedFilters,
+        exactMatch: false,
+        coverageStatus: 'source_gap_possible',
+        noResultReason: 'port_not_covered',
+        relaxedMatchCounts,
+        notes: [
+          '直连价格源暂未收录该出发港/母港的可报价航次；应继续用公开网络或官方入口核实市场供给。',
+        ],
+      };
+    }
+  }
+
+  if (filters.sailDateFrom || filters.sailDateTo) {
+    relaxedMatchCounts.withoutDate = countDealsForCoverage({
+      ...filters,
+      sailDateFrom: undefined,
+      sailDateTo: undefined,
+    });
+
+    if (relaxedMatchCounts.withoutDate > 0) {
+      return {
+        appliedFilters,
+        exactMatch: false,
+        coverageStatus: 'no_exact_match',
+        noResultReason: 'date_not_covered',
+        relaxedMatchCounts,
+        notes: [
+          '放开日期后直连价格源有结果，说明当前无结果主要来自日期范围不匹配。',
+        ],
+      };
+    }
+  }
+
+  const hasAppliedFilters = Object.keys(appliedFilters).length > 0;
+
+  return {
+    appliedFilters,
+    exactMatch: false,
+    coverageStatus: hasAppliedFilters ? 'no_exact_match' : 'source_gap_possible',
+    noResultReason: hasAppliedFilters ? 'no_matching_sailing' : 'unknown',
+    relaxedMatchCounts,
+    notes: [
+      hasAppliedFilters
+        ? '直连价格源没有符合用户原始条件的精确结果；不要自动改港口、改品牌或改往返条件，只能把放宽结果单独标为备选。'
+        : '直连价格源没有返回可报价航次；可能是数据源暂时无可用记录。',
+    ],
+  };
+}
+
+function searchDealsCore(filters: SearchFilters): SearchDealsCoreResult {
   const db = getDb();
   const conditions: string[] = ['d.price > 0'];
   const params: (string | number)[] = [];
@@ -647,6 +782,15 @@ export function searchDeals(filters: SearchFilters): SearchDealsResult {
   return {
     totalMatches: sortedDeals.length,
     deals: pageDeals,
+  };
+}
+
+export function searchDeals(filters: SearchFilters): SearchDealsResult {
+  const result = searchDealsCore(filters);
+
+  return {
+    ...result,
+    coverage: analyzeSearchCoverage(filters, result.totalMatches),
   };
 }
 

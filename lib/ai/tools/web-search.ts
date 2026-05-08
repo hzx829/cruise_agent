@@ -15,12 +15,176 @@ interface TavilyResponse {
   query: string;
 }
 
+type SearchPurpose =
+  | 'official_schedule'
+  | 'market_supply'
+  | 'review'
+  | 'travel'
+  | 'news'
+  | 'general';
+
+type SourcePreference =
+  | 'official_first'
+  | 'professional_first'
+  | 'general';
+
+type WebSourceType =
+  | 'official_cruise_line'
+  | 'official_port'
+  | 'ota'
+  | 'industry_media'
+  | 'review_site'
+  | 'general_web';
+
+const OFFICIAL_CRUISE_DOMAINS = [
+  'royalcaribbean.com',
+  'msccruises.com',
+  'msccruises.com.cn',
+  'ncl.com',
+  'princess.com',
+  'carnival.com',
+  'celebritycruises.com',
+  'hollandamerica.com',
+  'costacruises.com',
+  'silversea.com',
+  'disneycruise.disney.go.com',
+  'vikingcruises.com',
+  'ponant.com',
+  'rssc.com',
+  'oceaniacruises.com',
+  'azamara.com',
+  'virginvoyages.com',
+];
+
+const OFFICIAL_PORT_DOMAINS = [
+  'portshanghai.com.cn',
+  'hkcruise.com',
+  'kaitakcruiseterminal.com.hk',
+  'marina-bay.sg',
+  'singaporecruise.com.sg',
+  'porteverglades.net',
+  'portmiami.biz',
+  'portcanaveral.com',
+  'portseattle.org',
+];
+
+const OTA_DOMAINS = [
+  'vacationstogo.com',
+  'cruise.com',
+  'cruises.com',
+  'icruise.com',
+  'cruisedirect.com',
+  'expedia.com',
+  'ctrip.com',
+  'trip.com',
+  'travelocity.com',
+];
+
+const INDUSTRY_MEDIA_DOMAINS = [
+  'seatrade-cruise.com',
+  'cruiseindustrynews.com',
+  'travelweekly.com',
+  'cruisehive.com',
+];
+
+const REVIEW_SITE_DOMAINS = [
+  'cruisecritic.com',
+  'cruisemapper.com',
+  'tripadvisor.com',
+  'reddit.com',
+];
+
+function normalizeDomain(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function domainMatches(domain: string, candidates: string[]): boolean {
+  return candidates.some(
+    (candidate) => domain === candidate || domain.endsWith(`.${candidate}`)
+  );
+}
+
+function classifySourceType(url: string): WebSourceType {
+  const domain = normalizeDomain(url);
+
+  if (domainMatches(domain, OFFICIAL_CRUISE_DOMAINS)) {
+    return 'official_cruise_line';
+  }
+
+  if (domainMatches(domain, OFFICIAL_PORT_DOMAINS)) {
+    return 'official_port';
+  }
+
+  if (domainMatches(domain, OTA_DOMAINS)) {
+    return 'ota';
+  }
+
+  if (domainMatches(domain, INDUSTRY_MEDIA_DOMAINS)) {
+    return 'industry_media';
+  }
+
+  if (domainMatches(domain, REVIEW_SITE_DOMAINS)) {
+    return 'review_site';
+  }
+
+  return 'general_web';
+}
+
+function quoteSearchTerm(term: string): string {
+  const trimmed = term.trim();
+  if (!trimmed) return '';
+  return /\s/.test(trimmed) ? `"${trimmed.replace(/"/g, '')}"` : trimmed;
+}
+
+function buildFocusedQuery(params: {
+  query: string;
+  purpose: SearchPurpose;
+  sourcePreference: SourcePreference;
+  mustIncludeTerms?: string[];
+}): string {
+  const additions: string[] = [];
+
+  if (params.purpose === 'official_schedule') {
+    additions.push('official cruise schedule departures port');
+  } else if (params.purpose === 'market_supply') {
+    additions.push('cruise departures homeport sailings official');
+  } else if (params.purpose === 'review') {
+    additions.push('review ship experience cruise critic');
+  } else if (params.purpose === 'news') {
+    additions.push('latest cruise industry news');
+  }
+
+  if (params.sourcePreference === 'official_first') {
+    additions.push('official site cruise line port authority');
+  } else if (params.sourcePreference === 'professional_first') {
+    additions.push('cruise industry analysis professional source');
+  }
+
+  const requiredTerms = params.mustIncludeTerms
+    ?.map(quoteSearchTerm)
+    .filter(Boolean);
+
+  const focusedQuery = [
+    params.query.trim(),
+    ...additions,
+    ...(requiredTerms ?? []),
+  ].join(' ');
+
+  return focusedQuery.slice(0, 400);
+}
+
 async function tavilySearch(params: {
   query: string;
   searchDepth?: 'basic' | 'advanced';
   maxResults?: number;
   includeDomains?: string[];
   excludeDomains?: string[];
+  topic?: 'general' | 'news';
+  timeRange?: 'day' | 'week' | 'month' | 'year';
 }): Promise<TavilyResponse> {
   const apiKey = process.env.TAVILY_API_KEY;
   if (!apiKey) {
@@ -39,6 +203,8 @@ async function tavilySearch(params: {
       max_results: Math.min(params.maxResults ?? 5, 10),
       include_domains: params.includeDomains,
       exclude_domains: params.excludeDomains,
+      topic: params.topic,
+      time_range: params.timeRange,
       include_answer: true,
     }),
   });
@@ -60,7 +226,7 @@ async function tavilySearch(params: {
 export const webSearch = tool({
   description: `在互联网上搜索邮轮相关信息。
 适用于回答以下类型的问题：
-- 直连价格源没有收录时，补充查询从某港口/母港出发的邮轮、船司、班期或官方入口
+- 直连价格源没有收录或覆盖不足时，按用户原始港口/品牌/日期约束补充查询邮轮供给、官方班期、母港出发、船司入口或港口公开信息
 - 邮轮品牌评测、船只设施、餐饮风格、娱乐活动
 - 目的地攻略、最佳旅游季节、港口周边玩法
 - 两艘船/两个品牌的非价格维度对比
@@ -70,7 +236,7 @@ export const webSearch = tool({
 
 ⚠️ 价格/报价/特价/折扣等问题必须先使用 searchDeals、getTopPriceDrops 等直连价格工具。
    当直连价格源返回 0 条或明显没有覆盖用户指定港口时，可以用此工具做兜底搜索；
-   兜底搜索结果必须标注为网络参考，不要声称是直连实时价格。`,
+   兜底搜索必须保留用户原始约束，结果标注为网络公开信息参考，不要声称是直连实时价格。`,
   inputSchema: z.object({
     query: z.string().describe('搜索关键词。建议使用英文或中英混合，以获取更丰富的结果。例如："Royal Caribbean vs MSC dining experience"'),
     searchDepth: z
@@ -86,25 +252,86 @@ export const webSearch = tool({
     focusDomain: z
       .enum(['general', 'review', 'travel', 'news'])
       .optional()
-      .describe('搜索偏向。review=评测类, travel=旅行攻略, news=行业新闻, general=通用'),
+      .describe('兼容旧参数：搜索偏向。review=评测类, travel=旅行攻略, news=行业新闻, general=通用'),
+    purpose: z
+      .enum([
+        'official_schedule',
+        'market_supply',
+        'review',
+        'travel',
+        'news',
+        'general',
+      ])
+      .optional()
+      .describe('搜索目的。official_schedule=官方班期/港口入口，market_supply=市场供给/母港航线，review=评测，travel=攻略，news=新闻，general=通用'),
+    preferredDomains: z
+      .array(z.string())
+      .max(10)
+      .optional()
+      .describe('优先限定搜索的域名列表，例如 ["msccruises.com.cn", "royalcaribbean.com"]。只有明确需要限定来源时使用'),
+    mustIncludeTerms: z
+      .array(z.string())
+      .max(8)
+      .optional()
+      .describe('搜索中必须保留的用户硬约束词，如 ["天津港", "MSC", "2026"]。用于避免把原港口/品牌查偏'),
+    recency: z
+      .enum(['any', 'month', 'year'])
+      .optional()
+      .describe('时间范围偏好。查最新班期/新闻时可用 month 或 year；默认 any'),
+    sourcePreference: z
+      .enum(['official_first', 'professional_first', 'general'])
+      .optional()
+      .describe('来源偏好。official_first 优先官网/港口/船司入口；professional_first 优先行业媒体/专业站；general 不额外偏置'),
   }),
-  execute: async ({ query, searchDepth, maxResults, focusDomain }) => {
+  execute: async ({
+    query,
+    searchDepth,
+    maxResults,
+    focusDomain,
+    purpose,
+    preferredDomains,
+    mustIncludeTerms,
+    recency,
+    sourcePreference,
+  }) => {
+    const focusPurposeMap: Record<string, SearchPurpose> = {
+      general: 'general',
+      review: 'review',
+      travel: 'travel',
+      news: 'news',
+    };
+    const effectivePurpose =
+      purpose ?? focusPurposeMap[focusDomain ?? 'general'] ?? 'general';
+    const effectiveSourcePreference =
+      sourcePreference ??
+      (effectivePurpose === 'official_schedule' ||
+      effectivePurpose === 'market_supply'
+        ? 'official_first'
+        : 'general');
+    const focusedQuery = buildFocusedQuery({
+      query,
+      purpose: effectivePurpose,
+      sourcePreference: effectiveSourcePreference,
+      mustIncludeTerms,
+    });
+
     // 根据 focusDomain 选择限定域名
-    const domainMap: Record<string, string[]> = {
+    const domainMap: Partial<Record<SearchPurpose, string[]>> = {
       review: ['cruisecritic.com', 'cruisemapper.com', 'cruisehive.com'],
       travel: ['lonelyplanet.com', 'tripadvisor.com', 'travel.com'],
       news: ['seatrade-cruise.com', 'travelweekly.com', 'cruiseindustrynews.com'],
-      general: [],
     };
-    const includeDomains = focusDomain && focusDomain !== 'general'
-      ? domainMap[focusDomain]
-      : undefined;
+    const includeDomains = preferredDomains?.length
+      ? preferredDomains
+      : domainMap[effectivePurpose];
 
     const data = await tavilySearch({
-      query,
+      query: focusedQuery,
       searchDepth: searchDepth ?? 'basic',
       maxResults: maxResults ?? 5,
       includeDomains,
+      topic: effectivePurpose === 'news' ? 'news' : 'general',
+      timeRange: recency === 'any' ? undefined : recency,
     });
 
     if (!process.env.TAVILY_API_KEY) {
@@ -115,20 +342,32 @@ export const webSearch = tool({
       };
     }
 
-    return {
-      available: true,
-      query: data.query,
-      summary: data.answer ?? null,
-      results: data.results.map((r) => ({
+    const sources = data.results.map((r) => {
+      const domain = normalizeDomain(r.url);
+      return {
         title: r.title,
         url: r.url,
+        domain,
+        sourceType: classifySourceType(r.url),
         snippet: r.content?.slice(0, 600) ?? '',
         publishedDate: r.published_date ?? null,
         relevanceScore: Math.round((r.score ?? 0) * 100) / 100,
-      })),
+      };
+    });
+
+    return {
+      available: true,
+      query: data.query,
+      requestedQuery: query,
+      purpose: effectivePurpose,
+      sourcePreference: effectiveSourcePreference,
+      mustIncludeTerms: mustIncludeTerms ?? [],
+      summary: data.answer ?? null,
+      sources,
+      results: sources,
       resultCount: data.results.length,
       dataSource: 'web_search',
-      disclaimer: '以上信息来自互联网，仅供参考，请以官方信息为准',
+      disclaimer: '以上信息来自互联网公开页面，仅供参考；价格和班期请以船司、港口或 OTA 最终页面为准',
     };
   },
 });

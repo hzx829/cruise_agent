@@ -47,7 +47,7 @@ function parseRouteStops(value: string | null | undefined): RouteStopOutput[] {
 
 export const searchDeals = tool({
   description:
-    '搜索邮轮特价航线。支持按品牌、目的地、出发港、到达港、经停港、是否往返、航区、价格范围、出发日期、航行天数、舱位类型、价格趋势、品牌层级等筛选。默认按同一航次聚合，只返回该航次最低起价；若指定 cabinType，则返回该房型在每个航次的价格。',
+    '搜索已接入直连价格源中的邮轮报价/航次。支持按品牌、目的地、出发港、到达港、经停港、是否往返、航区、价格范围、出发日期、航行天数、舱位类型、价格趋势、品牌层级等筛选。用户明确提出的港口、品牌、日期、往返、经停等条件默认都是硬约束，不要自行放宽。默认按同一航次聚合，只返回该航次最低起价；若指定 cabinType，则返回该房型在每个航次的价格。返回 0 条只代表已接入直连价格源没有精确匹配或可能覆盖不足，不代表市场没有船；遇到港口/母港/航线供给问题应再用 webSearch 查公开网络/官方入口。',
   inputSchema: z.object({
     brand: z
       .string()
@@ -126,6 +126,12 @@ export const searchDeals = tool({
       count: result.totalMatches,
       groupedBySailing: true,
       requestedCabinType: params.cabinType ?? null,
+      appliedFilters: result.coverage.appliedFilters,
+      exactMatch: result.coverage.exactMatch,
+      coverageStatus: result.coverage.coverageStatus,
+      noResultReason: result.coverage.noResultReason ?? null,
+      relaxedMatchCounts: result.coverage.relaxedMatchCounts,
+      coverageNotes: result.coverage.notes,
       deals: result.deals.map((d) => {
         const { startPort, endPort } = getRouteEndpoints(d);
         const { routeLabel, routeType } = buildRouteLabel(d);
