@@ -196,20 +196,26 @@ cd "\${BUILD_DIR}"
 pnpm install --frozen-lockfile
 pnpm build
 
-# 保留运行态 data/agent.db；其余代码和构建产物用当前提交替换。
+# Preserve runtime data such as data/agent.db; replace everything else from the built commit.
 find "\${REMOTE_APP_DIR}" -mindepth 1 -maxdepth 1 ! -name 'data' -exec rm -rf {} +
 tar -C "\${BUILD_DIR}" -cf - . | tar -C "\${REMOTE_APP_DIR}" -xf -
 
 rm -rf "\${BUILD_DIR}" "\${REMOTE_ARCHIVE}"
 
-if pm2 describe "\${PM2_APP_NAME}" > /dev/null 2>&1; then
-    pm2 reload "\${PM2_APP_NAME}" --update-env
+APP_IDS=\$(pm2 jlist | node -e "let s=''; process.stdin.on('data', d => s += d); process.stdin.on('end', () => { const name = process.argv[1]; const ids = JSON.parse(s).filter(p => p.name === name).map(p => p.pm_id); console.log(ids.join(' ')); });" "\${PM2_APP_NAME}")
+read -r PRIMARY_ID EXTRA_IDS <<< "\${APP_IDS}"
+
+if [[ -n "\${PRIMARY_ID:-}" ]]; then
+    for extra_id in \${EXTRA_IDS:-}; do
+        pm2 delete "\${extra_id}" || true
+    done
+    pm2 reload "\${PRIMARY_ID}" --update-env
 else
     cd "\${REMOTE_APP_DIR}"
     pm2 start "pnpm start" --name "\${PM2_APP_NAME}" --cwd "\${REMOTE_APP_DIR}"
-    pm2 save
     pm2 startup systemd -u ${SERVER_USER} --hp /root || true
 fi
+pm2 save
 
 for path in /chat /admin/agent-traces /api/admin/agent-traces?limit=1; do
     ok=0
