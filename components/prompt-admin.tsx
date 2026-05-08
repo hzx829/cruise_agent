@@ -258,7 +258,7 @@ export function PromptAdmin() {
           <div>
             <h1 className="text-lg font-semibold">Agent Prompt 管理</h1>
             <p className="text-sm text-muted-foreground">
-              编辑产品可调策略，核心价格规则仍由开发锁定。
+              编辑完整 system prompt 模板，发布后下一次对话生效。
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -386,7 +386,7 @@ export function PromptAdmin() {
 
           <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
             <label className="text-sm font-medium" htmlFor="prompt-content">
-              产品可调 Prompt
+              完整 System Prompt 模板
             </label>
             <textarea
               id="prompt-content"
@@ -417,7 +417,7 @@ export function PromptAdmin() {
             <div>
               <h2 className="text-sm font-medium">最终 Prompt 预览</h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                包含开发锁定规则和动态数据上下文
+                会替换当前日期和品牌覆盖数据占位符
               </p>
             </div>
             <button

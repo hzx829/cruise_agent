@@ -4,14 +4,14 @@
 
 当前 `cruise_agent` 的 system prompt 由 `lib/ai/prompts.ts` 在服务端拼装，产品如果想调整 agent 表达方式、推荐口径或文案风格，需要开发改代码并重新发布。
 
-项目团队目前是一个开发 + 一个产品，因此最有杠杆的改造是：把「产品可调 prompt」开放到前端管理页，同时保留开发维护的核心安全规则和工具路由规则。
+项目团队目前是一个开发 + 一个产品，因此最有杠杆的改造是：把完整 `system prompt` 模板开放到前端管理页。产品可以直接调整角色、人设、工具路由、回答格式和推荐口径；代码只负责注入当前日期、品牌覆盖等运行时数据。
 
 ## 目标
 
 - 产品可以在前端编辑、保存、发布、回滚 prompt。
 - agent 请求实时读取当前线上 prompt，不需要重启服务。
 - 每个 prompt 有版本记录，能追踪改动原因。
-- 开发仍然锁住价格可信度、工具路由、数据来源等硬规则，避免 prompt 调整导致价格幻觉。
+- Prompt 的全部静态文本都由产品在管理页维护；开发只维护运行时占位符替换和版本化发布能力。
 
 ## 非目标
 
@@ -21,46 +21,32 @@
 
 ## Prompt 分层
 
-最终传给模型的 instructions 由三层组成：
+最终传给模型的 instructions 由两层组成：
 
 ```txt
-Core Guardrails       开发维护，不在前端开放
-Product Prompt        产品可编辑，可版本化发布
-Runtime Data Context  动态数据，如当前日期、品牌覆盖、tier 覆盖
+System Prompt Template  产品可编辑，可版本化发布
+Runtime Placeholders    代码动态替换，如当前日期、品牌覆盖、tier 覆盖
 ```
 
-### Core Guardrails
+### System Prompt Template
 
-用于保护 agent 的底线能力：
+产品可以直接调整：
 
-- 价格、报价、特价、降价、折扣、比价问题只能使用数据库工具。
-- 禁止用 `webSearch` / `cruiseEncyclopedia` 查询或补充价格。
-- 查不到符合条件的航线时，必须明确说明没有结果，不能用相近航线充数。
-- `dealId` 必须直接复用工具返回的字符串 ID。
-- 人民币航线和美元航线不能混在一起比价。
-- 爬虫 DB 是价格事实的唯一来源。
-
-### Product Prompt
-
-产品可以调整：
-
-- agent 人设和语气。
+- Agent 人设和语气。
+- 工具路由规则和数据源标注方式。
 - 回答结构和详略程度。
 - 推荐优先级，例如更偏向降价幅度、客单价、奢华品牌话题性。
 - 文案风格，例如小红书、旅行社销售、朋友圈短文案。
 - 展示策略，例如默认展示几条、是否主动总结卖点。
 
-产品不直接编辑 Core Guardrails。
+默认模板仍带有推荐的价格可信度、工具路由和格式规则，但这些规则不再由代码锁死，产品可以在 `/admin/prompts` 中直接调整。
 
-### Runtime Data Context
+### Runtime Placeholders
 
-仍由代码动态生成：
+仍由代码动态替换：
 
-- 当前北京时间日期。
-- 当前数据库中有数据的品牌。
-- 品牌 tier 覆盖情况。
-- 当前可用舱位类型。
-- 价格追踪字段说明。
+- `{{currentDate}}`：当前北京时间日期。
+- `{{brandCoverageContext}}`：当前直连价格源中有数据的品牌、tier 覆盖和舱位覆盖。
 
 ## 数据模型
 
@@ -147,13 +133,18 @@ POST /api/admin/prompts/preview
 instructions: buildSystemPrompt()
 ```
 
-因此只需要改造 `buildSystemPrompt()`：
+`buildSystemPrompt()` 会读取当前线上完整模板，并替换运行时占位符：
 
 ```ts
-export function buildSystemPrompt(): string {
-  return buildSystemPromptWithProductPrompt(
-    getActiveProductPrompt()?.content ?? DEFAULT_PRODUCT_PROMPT
-  );
+export function buildSystemPrompt(promptTemplateOverride?: string): string {
+  const activeBrands = getActiveBrandsStats();
+  const promptTemplate =
+    promptTemplateOverride ?? getActivePromptTemplate().content;
+
+  return renderPromptTemplate(promptTemplate, {
+    currentDate: buildCurrentDate(),
+    brandCoverageContext: buildBrandCoverageContext(activeBrands),
+  });
 }
 ```
 

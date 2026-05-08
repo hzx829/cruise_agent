@@ -1,14 +1,10 @@
 import { generateId } from 'ai';
 import agentDb from '@/lib/db/agent-db';
-
-export const DEFAULT_PRODUCT_PROMPT = `你是「游速达」邮轮顾问，面向旅行社邮轮产品和销售人员。
-
-产品侧可调整的策略：
-- 回答要专业、直接、方便销售拿去用。
-- 用户问价格或降价时，优先给出最值得关注的航线，并说明推荐理由。
-- 用户问文案时，生成适合传播的中文内容，突出价格锚点、降价幅度、航线卖点和行动号召。
-- 用户问知识或评测时，先给结论，再给依据，避免冗长百科式回答。
-- 默认回答不要堆太多字段，优先展示品牌、船名、航线、日期、天数、最低价和亮点。`;
+import {
+  DEFAULT_SYSTEM_PROMPT_TEMPLATE,
+  buildTemplateFromLegacyProductPrompt,
+  isLegacyProductPromptContent,
+} from './prompt-template';
 
 export interface AgentPromptRow {
   id: string;
@@ -70,7 +66,12 @@ const stmtListByStatus = agentDb.prepare(
 
 const ensureDefaultActivePromptTx = agentDb.transaction(() => {
   const active = stmtGetActive.get('active') as AgentPromptRow | undefined;
-  if (active) return active;
+  if (active) {
+    if (isLegacyProductPromptContent(active.content)) {
+      return migrateLegacyProductPrompt(active);
+    }
+    return active;
+  }
 
   const nextVersion = getNextVersion();
   const id = generateId();
@@ -79,14 +80,30 @@ const ensureDefaultActivePromptTx = agentDb.transaction(() => {
     id,
     nextVersion,
     'active',
-    DEFAULT_PRODUCT_PROMPT,
-    '系统初始化默认产品 prompt',
+    DEFAULT_SYSTEM_PROMPT_TEMPLATE,
+    '系统初始化默认完整 prompt 模板',
     'system',
     new Date().toISOString(),
   );
 
   return stmtGetById.get(id) as AgentPromptRow;
 });
+
+function migrateLegacyProductPrompt(active: AgentPromptRow): AgentPromptRow {
+  const id = generateId();
+  stmtArchiveActive.run();
+  stmtInsert.run(
+    id,
+    getNextVersion(),
+    'active',
+    buildTemplateFromLegacyProductPrompt(active.content),
+    `系统迁移：基于 v${active.version} 生成完整 prompt 模板`,
+    'system',
+    new Date().toISOString(),
+  );
+
+  return stmtGetById.get(id) as AgentPromptRow;
+}
 
 const savePromptDraftTx = agentDb.transaction((input: SavePromptDraftInput) => {
   const id = generateId();
@@ -153,6 +170,10 @@ function getNextVersion(): number {
 }
 
 export function getActiveProductPrompt(): AgentPromptRow {
+  return ensureDefaultActivePromptTx();
+}
+
+export function getActivePromptTemplate(): AgentPromptRow {
   return ensureDefaultActivePromptTx();
 }
 
