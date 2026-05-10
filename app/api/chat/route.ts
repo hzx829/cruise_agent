@@ -7,6 +7,13 @@ import { createZhipu } from 'zhipu-ai-provider';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createCruiseAgent } from '@/lib/ai/agent';
 import { detectCruiseIntent } from '@/lib/ai/intent';
+import {
+  ABORTED_ASSISTANT_FALLBACK_TEXT,
+  ERROR_ASSISTANT_FALLBACK_TEXT,
+  createFallbackAssistantMessage,
+  ensureRenderableAssistantMessage,
+  hasRenderableContent,
+} from '@/lib/ai/message-content';
 import { loadChat, saveMessages, updateChatTitle, createChat } from '@/lib/db/chat-store';
 import { createAgentRun, saveAgentStep } from '@/lib/db/agent-trace-store';
 
@@ -83,13 +90,22 @@ export async function POST(req: Request) {
     userQuery: latestUserText,
     detectedIntent: intentContext?.intent,
   });
+  const runStartedAt = Date.now();
+  let toolStepCount = 0;
+  let toolResultCount = 0;
+  let savedErrorFallback = false;
 
   return createAgentUIStreamResponse({
     agent,
     uiMessages: allMessages,
     generateMessageId,
+    timeout: { totalMs: 55_000, stepMs: 35_000, chunkMs: 20_000 },
     onStepFinish: async ({ stepNumber, toolResults }) => {
       try {
+        if (toolResults?.length) {
+          toolStepCount += 1;
+          toolResultCount += toolResults.length;
+        }
         for (const toolResult of toolResults ?? []) {
           saveAgentStep({
             runId,
@@ -103,13 +119,59 @@ export async function POST(req: Request) {
         console.error('[agent-trace] failed to persist step', error);
       }
     },
-    onFinish: async ({ messages: finishedMessages }) => {
+    onError: (error) => {
+      console.error('[agent-stream] failed', {
+        runId,
+        chatId: id,
+        durationMs: Date.now() - runStartedAt,
+        error,
+      });
+
+      if (!savedErrorFallback) {
+        try {
+          saveMessages(id, [
+            createFallbackAssistantMessage(
+              generateMessageId(),
+              ERROR_ASSISTANT_FALLBACK_TEXT,
+            ),
+          ]);
+          savedErrorFallback = true;
+        } catch (persistError) {
+          console.error('[agent-stream] failed to persist fallback', persistError);
+        }
+      }
+
+      return ERROR_ASSISTANT_FALLBACK_TEXT;
+    },
+    onFinish: async ({ messages: finishedMessages, isAborted, finishReason }) => {
       // 找出 AI 回复的新消息并保存
       const existingIds = new Set(allMessages.map((m) => m.id));
       const newMessages = finishedMessages.filter((m) => !existingIds.has(m.id));
+      const fallbackText = isAborted
+        ? ABORTED_ASSISTANT_FALLBACK_TEXT
+        : undefined;
+      const messagesToSave = newMessages.map((msg) =>
+        ensureRenderableAssistantMessage(msg, fallbackText),
+      );
+      const emptyAssistantCount = newMessages.filter(
+        (msg) => msg.role === 'assistant' && !hasRenderableContent(msg),
+      ).length;
+
       if (newMessages.length > 0) {
-        saveMessages(id, newMessages);
+        saveMessages(id, messagesToSave);
       }
+
+      console.info('[agent-run] finished', {
+        runId,
+        chatId: id,
+        durationMs: Date.now() - runStartedAt,
+        finishReason,
+        isAborted,
+        newMessageCount: newMessages.length,
+        emptyAssistantCount,
+        toolStepCount,
+        toolResultCount,
+      });
 
       // 首条消息时设置标题
       if (previousMessages.length === 0) {

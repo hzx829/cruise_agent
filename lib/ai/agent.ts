@@ -86,6 +86,16 @@ const ANALYTICS_TOOLS: CruiseToolName[] = [
 ];
 
 const WEB_TOOLS = new Set<CruiseToolName>(['webSearch', 'cruiseEncyclopedia']);
+const WRAP_UP_AFTER_STEP_WITH_TOOLS = 5;
+const HARD_FINAL_STEP = 7;
+
+const FINAL_ANSWER_INSTRUCTIONS = `## 最终回答收束要求
+
+你已经完成了必要的信息查询。现在必须停止继续调用工具，直接基于已有信息回答用户。
+
+- 如果信息足够，先给明确结论或 1-3 个推荐，再补充关键理由。
+- 如果信息不足，直接说明缺口和可执行的下一步，不要继续搜索。
+- 不要输出空白内容，也不要只描述工具过程。`;
 
 interface CreateCruiseAgentOptions {
   intentContext?: CruiseIntentContext;
@@ -95,8 +105,26 @@ function withoutWebTools(tools: CruiseToolName[]): CruiseToolName[] {
   return tools.filter((toolName) => !WEB_TOOLS.has(toolName));
 }
 
+function hasAnyToolResult(
+  steps: ReadonlyArray<{
+    toolResults: Array<unknown>;
+  }>,
+): boolean {
+  return steps.some((step) => step.toolResults.length > 0);
+}
+
+function shouldForceFinalAnswer(
+  stepNumber: number,
+  steps: ReadonlyArray<{
+    toolResults: Array<unknown>;
+  }>,
+): boolean {
+  if (stepNumber >= HARD_FINAL_STEP) return true;
+  return stepNumber >= WRAP_UP_AFTER_STEP_WITH_TOOLS && hasAnyToolResult(steps);
+}
+
 function hasSearchDealsCoverageGap(
-  steps: Array<{
+  steps: ReadonlyArray<{
     toolResults: Array<{ toolName: string; output: unknown }>;
   }>,
 ): boolean {
@@ -121,7 +149,7 @@ function hasSearchDealsCoverageGap(
 
 function chooseActiveTools(
   intentContext: CruiseIntentContext | undefined,
-  steps: Array<{
+  steps: ReadonlyArray<{
     toolResults: Array<{ toolName: string; output: unknown }>;
   }>,
 ): CruiseToolName[] | undefined {
@@ -179,13 +207,25 @@ export function createCruiseAgent(
   model: LanguageModel,
   options: CreateCruiseAgentOptions = {},
 ) {
+  const instructions = buildInstructions(options.intentContext);
+
   return new ToolLoopAgent({
     model,
-    instructions: buildInstructions(options.intentContext),
+    instructions,
     tools: cruiseTools,
-    prepareStep: ({ steps }) => ({
-      activeTools: chooseActiveTools(options.intentContext, steps),
-    }),
+    prepareStep: ({ steps, stepNumber }) => {
+      if (shouldForceFinalAnswer(stepNumber, steps)) {
+        return {
+          activeTools: [],
+          toolChoice: 'none' as const,
+          system: `${instructions}\n\n${FINAL_ANSWER_INSTRUCTIONS}`,
+        };
+      }
+
+      return {
+        activeTools: chooseActiveTools(options.intentContext, steps),
+      };
+    },
     // 允许最多 8 步：典型场景是 DB查询(1-2步) + 搜索(1步) + 综合回答(1步)
     stopWhen: stepCountIs(8),
     onStepFinish: async ({ stepNumber, toolCalls, usage }) => {

@@ -7,8 +7,9 @@ import { DealList } from './deal-card';
 import { PriceChart } from './price-chart';
 import { CompareTable } from './compare-table';
 import { CopywritingCard } from './copywriting-card';
-import { Ship, Loader2, TrendingDown, BarChart3, CheckCircle2 } from 'lucide-react';
+import { Ship, Loader2, TrendingDown, BarChart3, CheckCircle2, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { EMPTY_ASSISTANT_FALLBACK_TEXT, hasRenderableContent } from '@/lib/ai/message-content';
 
 export function Message({
   message,
@@ -18,6 +19,7 @@ export function Message({
   isLoading?: boolean;
 }) {
   const isUser = message.role === 'user';
+  const hasVisibleContent = isUser || hasRenderableContent(message);
 
   // 在多步工具调用之间（tool output-available 之后、下一个 step-start 处理完之前）显示加载点
   // 注：部分 LLM 会在 tool-input 之前或之后插入一个空 text part（text-start 无后续 delta），
@@ -32,6 +34,7 @@ export function Message({
       (lastPart.type.startsWith('tool-') &&
         'state' in lastPart &&
         (lastPart as { state: string }).state === 'output-available'));
+  const showEmptyFallback = !isUser && !isLoading && !hasVisibleContent;
 
   return (
     <div
@@ -195,6 +198,13 @@ export function Message({
               return null;
           }
         })}
+
+        {showEmptyFallback && (
+          <div className="flex max-w-full items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+            <AlertCircle className="mt-0.5 size-4 shrink-0" />
+            <span>{EMPTY_ASSISTANT_FALLBACK_TEXT}</span>
+          </div>
+        )}
 
         {showLoadingDots && (
           <div className="flex items-center gap-1 py-1">
