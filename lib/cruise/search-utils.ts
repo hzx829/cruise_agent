@@ -11,6 +11,7 @@ const LOCATION_ALIAS_GROUPS = [
   ['tianjin', 'xingang', 'tianjin china', '天津', '天津中国', '新港'],
   ['xiamen', 'xiamen china', 'amoy', '厦门', '厦门中国'],
   ['shenzhen', 'shenzhen china', '深圳', '深圳中国'],
+  ['singapore', 'sin', 'singapore cruise centre', 'marina bay cruise centre', '新加坡', '星加坡'],
   ['jeju', 'cju', 'jeju island', '济州', '济州岛'],
   ['busan', 'pusan', '釜山'],
   ['seoul', 'incheon', 'icn', '首尔', '仁川'],

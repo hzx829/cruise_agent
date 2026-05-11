@@ -214,8 +214,19 @@ function uniqueStrings(values: Array<string | undefined>): string[] {
 function usesColloquialLuxury(query: string): boolean {
   return (
     /奢华|豪华/i.test(query) &&
-    !/只看|仅看|限定|奢华品牌|高奢|luxury\s*tier|tier\s*luxury/i.test(query)
+    !/只看|仅看|限定|严格|只要|奢华品牌|高奢|超奢|六星|luxury\s*tier|tier\s*luxury|silversea|regent|explora|seabourn|crystal|ritz/i.test(query)
   );
+}
+
+function normalizeColloquialLuxuryTier(
+  tier: SearchDealsInput['tier'],
+): SearchDealsInput['tier'] {
+  if (!tier) return ['premium', 'luxury'];
+  if (tier === 'luxury') return ['premium', 'luxury'];
+  if (Array.isArray(tier) && tier.length === 1 && tier[0] === 'luxury') {
+    return ['premium', 'luxury'];
+  }
+  return tier;
 }
 
 export function applyHardConstraintsToSearchDealsInput(
@@ -251,12 +262,8 @@ export function applyHardConstraintsToSearchDealsInput(
       ...constraints.itineraryIncludes,
     ]);
   }
-  if (
-    intentContext &&
-    input.tier === 'luxury' &&
-    usesColloquialLuxury(intentContext.originalQuery)
-  ) {
-    input.tier = ['premium', 'luxury'];
+  if (intentContext && usesColloquialLuxury(intentContext.originalQuery)) {
+    input.tier = normalizeColloquialLuxuryTier(input.tier);
   }
 
   return input;

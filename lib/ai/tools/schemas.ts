@@ -24,7 +24,7 @@ export const tierSchema = z
   }, z.union([tierEnum, z.array(tierEnum)]))
   .optional()
   .describe(
-    '品牌层级筛选，可传单个或数组: budget(大众) / standard(标准) / premium(高端) / luxury(奢华)。中文“豪华/奢华游轮”常是泛指高品质船，不要自动只传 luxury；除非用户明确只看奢华品牌，否则优先不填或传 premium+luxury'
+    '品牌层级筛选，可传单个或数组: budget(大众) / standard(标准) / premium(高端) / luxury(奢华)。中文“豪华/奢华游轮”常按高品质泛称处理，优先传 premium+luxury 或留空；用户明确说只看奢华品牌/高奢/luxury tier 时再传 luxury'
   );
 
 /**

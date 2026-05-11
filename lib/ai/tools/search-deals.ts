@@ -74,7 +74,7 @@ export const searchDeals = tool({
     itineraryIncludes: z
       .array(z.string())
       .optional()
-      .describe('必须经停/停靠/包含的港口列表，如 Singapore, Santorini, Mykonos。用户说“停靠/经停/途经/包含某港”时必须传这里，不要改用 departurePort'),
+      .describe('必须经停/停靠/包含的港口列表，如 Singapore, Santorini, Mykonos。用户说“停靠/经停/途经/包含某港”时传这里；departurePort 只用于从某港出发/登船/母港语义'),
     itineraryExcludes: z
       .array(z.string())
       .optional()

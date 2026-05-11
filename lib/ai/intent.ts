@@ -35,7 +35,7 @@ const PORT_PATTERNS: Array<[RegExp, string]> = [
   [/厦门/i, '厦门'],
   [/深圳/i, '深圳'],
   [/广州|南沙/i, '广州南沙'],
-  [/新加坡/i, '新加坡'],
+  [/新加坡/i, 'Singapore'],
   [/东京|横滨/i, '东京/横滨'],
   [/雅典|比雷埃夫斯|piraeus|athens/i, '雅典/比雷埃夫斯'],
   [/罗马|奇维塔韦基亚|civitavecchia|rome/i, '罗马/奇维塔韦基亚'],
@@ -59,7 +59,7 @@ const BRAND_PATTERNS: Array<[RegExp, string]> = [
 ];
 
 const ITINERARY_PATTERNS: Array<[RegExp, string]> = [
-  [/新加坡|星加坡|singapore/i, '新加坡'],
+  [/新加坡|星加坡|singapore/i, 'Singapore'],
   [/圣托里尼|santorini/i, '圣托里尼'],
   [/米科诺斯|mykonos/i, '米科诺斯'],
   [/济州|jeju/i, '济州'],
@@ -338,5 +338,5 @@ export function formatIntentContextForPrompt(
 - allowRelaxation: ${context.allowRelaxation ? 'true' : 'false'}
 - needsWeb: ${context.needsWeb ? 'true' : 'false'}
 - disableWeb: ${context.disableWeb ? 'true' : 'false'}
-- 执行要求：优先保持 hardConstraints；hardConstraints 里有 sailDateFrom/sailDateTo 时，调用 searchDeals 必须原样传入；用户说“停靠/经停/途经/包含”港口时必须用 itineraryIncludes，不要改成 departurePort；allowRelaxation=false 时不要主动给放宽条件备选；disableWeb=true 时不要调用 webSearch/cruiseEncyclopedia。`;
+- 执行策略：优先保持 hardConstraints；hardConstraints 里有 sailDateFrom/sailDateTo 时，调用 searchDeals 原样传入；用户说“停靠/经停/途经/包含”港口时使用 itineraryIncludes；用户说“从/出发/登船/母港”港口时使用 departurePort；allowRelaxation=false 时只回答原条件精确结果；disableWeb=true 时只使用直连价格源工具。`;
 }

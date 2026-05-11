@@ -4,6 +4,7 @@ import {
   DEFAULT_SYSTEM_PROMPT_TEMPLATE,
   buildTemplateFromLegacyProductPrompt,
   isLegacyProductPromptContent,
+  isOutdatedSystemPromptTemplate,
 } from './prompt-template';
 
 export interface AgentPromptRow {
@@ -70,6 +71,9 @@ const ensureDefaultActivePromptTx = agentDb.transaction(() => {
     if (isLegacyProductPromptContent(active.content)) {
       return migrateLegacyProductPrompt(active);
     }
+    if (isOutdatedSystemPromptTemplate(active.content)) {
+      return migrateOutdatedSystemPrompt(active);
+    }
     return active;
   }
 
@@ -98,6 +102,22 @@ function migrateLegacyProductPrompt(active: AgentPromptRow): AgentPromptRow {
     'active',
     buildTemplateFromLegacyProductPrompt(active.content),
     `系统迁移：基于 v${active.version} 生成完整 prompt 模板`,
+    'system',
+    new Date().toISOString(),
+  );
+
+  return stmtGetById.get(id) as AgentPromptRow;
+}
+
+function migrateOutdatedSystemPrompt(active: AgentPromptRow): AgentPromptRow {
+  const id = generateId();
+  stmtArchiveActive.run();
+  stmtInsert.run(
+    id,
+    getNextVersion(),
+    'active',
+    DEFAULT_SYSTEM_PROMPT_TEMPLATE,
+    `系统迁移：基于 v${active.version} 更新为分组式 prompt 模板`,
     'system',
     new Date().toISOString(),
   );
