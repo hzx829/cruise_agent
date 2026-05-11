@@ -7,6 +7,7 @@ import {
   useRef,
   useEffect,
   useCallback,
+  useMemo,
   type KeyboardEvent,
 } from 'react';
 import {
@@ -85,6 +86,17 @@ export function Chat({ id, initialMessages }: ChatProps) {
   const [isAtBottom, setIsAtBottom] = useState(true);
 
   const isLoading = status === 'streaming' || status === 'submitted';
+  const activeAssistantMessageId = useMemo(() => {
+    if (!isLoading) return null;
+
+    for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
+      if (messages[idx].role === 'assistant') {
+        return messages[idx].id;
+      }
+    }
+
+    return null;
+  }, [isLoading, messages]);
 
   // Auto-scroll when new messages arrive (only if at bottom)
   useEffect(() => {
@@ -169,15 +181,15 @@ export function Chat({ id, initialMessages }: ChatProps) {
               </div>
             ) : (
               <>
-                {messages.map((message, idx) => (
+                {messages.map((message) => (
                   <Message
                     key={message.id}
                     message={message}
-                    isLoading={isLoading && idx === messages.length - 1}
+                    isLoading={message.id === activeAssistantMessageId}
                   />
                 ))}
 
-                {status === 'submitted' && (
+                {isLoading && !activeAssistantMessageId && (
                   <div className="flex items-start gap-2 px-4 py-3 md:gap-3">
                     <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-background ring-1 ring-border">
                       <Ship className="size-4 text-primary" />

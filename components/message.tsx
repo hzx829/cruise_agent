@@ -11,6 +11,40 @@ import { Ship, Loader2, TrendingDown, BarChart3, CheckCircle2, AlertCircle } fro
 import { cn } from '@/lib/utils';
 import { EMPTY_ASSISTANT_FALLBACK_TEXT, hasRenderableContent } from '@/lib/ai/message-content';
 
+type MessagePart = UIMessage['parts'][number];
+
+function getPartState(part: MessagePart): string | undefined {
+  if (!('state' in part)) return undefined;
+  return typeof part.state === 'string' ? part.state : undefined;
+}
+
+function shouldShowLoadingDots(message: UIMessage, isLoading?: boolean): boolean {
+  if (message.role === 'user' || !isLoading) return false;
+
+  const lastPart = message.parts[message.parts.length - 1];
+  if (!lastPart) return true;
+
+  if (lastPart.type === 'text') {
+    return lastPart.text.trim().length === 0;
+  }
+
+  if (lastPart.type === 'step-start' || lastPart.type === 'reasoning') {
+    return true;
+  }
+
+  const state = getPartState(lastPart);
+
+  if (!state) {
+    return true;
+  }
+
+  return (
+    state === 'output-available' ||
+    state === 'output-error' ||
+    state === 'output-denied'
+  );
+}
+
 export function Message({
   message,
   isLoading,
@@ -21,19 +55,7 @@ export function Message({
   const isUser = message.role === 'user';
   const hasVisibleContent = isUser || hasRenderableContent(message);
 
-  // 在多步工具调用之间（tool output-available 之后、下一个 step-start 处理完之前）显示加载点
-  // 注：部分 LLM 会在 tool-input 之前或之后插入一个空 text part（text-start 无后续 delta），
-  // 此时 lastPart.type === 'text' && !lastPart.text，同样需要显示加载状态
-  const lastPart = message.parts[message.parts.length - 1];
-  const showLoadingDots =
-    !isUser &&
-    isLoading &&
-    (!lastPart ||
-      lastPart.type === 'step-start' ||
-      (lastPart.type === 'text' && !lastPart.text) ||
-      (lastPart.type.startsWith('tool-') &&
-        'state' in lastPart &&
-        (lastPart as { state: string }).state === 'output-available'));
+  const showLoadingDots = shouldShowLoadingDots(message, isLoading);
   const showEmptyFallback = !isUser && !isLoading && !hasVisibleContent;
 
   return (
