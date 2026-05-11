@@ -46,6 +46,24 @@ interface ChatProps {
   initialMessages?: UIMessage[];
 }
 
+type MessagePart = UIMessage['parts'][number];
+
+function getPartState(part: MessagePart | undefined): string | undefined {
+  if (!part || !('state' in part)) return undefined;
+  return typeof part.state === 'string' ? part.state : undefined;
+}
+
+function isCompletedToolPart(part: MessagePart | undefined): boolean {
+  if (!part?.type.startsWith('tool-')) return false;
+
+  const state = getPartState(part);
+  return (
+    state === 'output-available' ||
+    state === 'output-error' ||
+    state === 'output-denied'
+  );
+}
+
 export function Chat({ id, initialMessages }: ChatProps) {
   const [chatId] = useState(() => id ?? generateId());
   const hasReplacedUrl = useRef(false);
@@ -86,17 +104,23 @@ export function Chat({ id, initialMessages }: ChatProps) {
   const [isAtBottom, setIsAtBottom] = useState(true);
 
   const isLoading = status === 'streaming' || status === 'submitted';
-  const activeAssistantMessageId = useMemo(() => {
+  const activeAssistantMessage = useMemo(() => {
     if (!isLoading) return null;
 
     for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
       if (messages[idx].role === 'assistant') {
-        return messages[idx].id;
+        return messages[idx];
       }
     }
 
     return null;
   }, [isLoading, messages]);
+  const activeAssistantMessageId = activeAssistantMessage?.id ?? null;
+  const showPendingFollowUp =
+    isLoading &&
+    isCompletedToolPart(
+      activeAssistantMessage?.parts[activeAssistantMessage.parts.length - 1],
+    );
 
   // Auto-scroll when new messages arrive (only if at bottom)
   useEffect(() => {
@@ -189,19 +213,10 @@ export function Chat({ id, initialMessages }: ChatProps) {
                   />
                 ))}
 
+                {showPendingFollowUp && <AssistantPendingIndicator />}
+
                 {isLoading && !activeAssistantMessageId && (
-                  <div className="flex items-start gap-2 px-4 py-3 md:gap-3">
-                    <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-background ring-1 ring-border">
-                      <Ship className="size-4 text-primary" />
-                    </div>
-                    <div className="flex items-center gap-2 pt-2">
-                      <div className="flex gap-1">
-                        <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:0ms]" />
-                        <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:150ms]" />
-                        <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:300ms]" />
-                      </div>
-                    </div>
-                  </div>
+                  <AssistantPendingIndicator />
                 )}
               </>
             )}
@@ -258,6 +273,24 @@ export function Chat({ id, initialMessages }: ChatProps) {
               </button>
             )}
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AssistantPendingIndicator() {
+  return (
+    <div className="flex items-start gap-2 px-4 py-3 md:gap-3">
+      <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-background ring-1 ring-border">
+        <Ship className="size-4 text-primary" />
+      </div>
+      <div className="flex items-center gap-2 pt-2 text-xs text-muted-foreground">
+        <span>正在整理答案</span>
+        <div className="flex gap-1" aria-hidden="true">
+          <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:0ms]" />
+          <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:150ms]" />
+          <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:300ms]" />
         </div>
       </div>
     </div>

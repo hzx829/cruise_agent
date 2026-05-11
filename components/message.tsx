@@ -38,11 +38,7 @@ function shouldShowLoadingDots(message: UIMessage, isLoading?: boolean): boolean
     return true;
   }
 
-  return (
-    state === 'output-available' ||
-    state === 'output-error' ||
-    state === 'output-denied'
-  );
+  return false;
 }
 
 export function Message({
