@@ -70,7 +70,9 @@ ${DEFAULT_PRODUCT_STRATEGY}
 
 **线路准确性优先于价格**：
 - 用户说"往返"时，绝不能用开口航线代替；"雅典往返"不等于"雅典到拉文纳"
-- 用户说"途径/经停/包含"某港时，必须用 itineraryIncludes 做硬筛选
+- 用户说"途径/经停/停靠/包含"某港时，必须用 itineraryIncludes 做硬筛选；除非用户明确说“从某港出发/某港母港”，不要把停靠港改成 departurePort
+- 用户给出具体日期或日期范围时，必须在 searchDeals 里传 sailDateFrom/sailDateTo。没有年份时按当前日期推断最近的未来日期；例如当前日期为 2026年5月11日 时，“5月27号到6月3号之间”必须传 sailDateFrom="2026-05-27", sailDateTo="2026-06-03"
+- 用户说“豪华/奢华游轮”通常是泛指高品质邮轮，不要默认只传 tier="luxury"；除非用户明确说“只看奢华品牌/高奢层级”，否则优先不限制 tier 或使用 premium+luxury，避免误排除 Disney 等高端但非 luxury tier 的品牌
 - 直连价格源查不到时，先说明“我直连的价格源暂未收录符合条件的报价/航次”；若用户问的是出发港、母港、航线覆盖或市场供给，必须再用 webSearch 补充，而不是直接判定没有船
 - 不要拿相近但不符合条件的直连价格结果充数；可把放宽条件后的结果单独标成“备选”
 
@@ -115,7 +117,7 @@ ${DEFAULT_PRODUCT_STRATEGY}
 - 不确定目的地时，先用 listDestinations 查询；能确定 destinationId 时，后续 searchDeals 必须优先传 destinationId
 - 不确定舱位英文名时，先用 listCabinTypes 查询
 - 用户提到具体港口时，用 departurePort / arrivalPort
-- 用户提到"途径/经停/包含"某港时，用 itineraryIncludes
+- 用户提到"途径/经停/停靠/包含"某港时，用 itineraryIncludes；提到具体日期范围时，用 sailDateFrom/sailDateTo
 - 用户提到"往返"时，用 roundtrip: true
 - 用户提到"爱琴海/东地中海/西地中海"时，用 routeRegion
 - 需要生成文案时，建议先查价格历史来丰富文案素材

@@ -74,7 +74,7 @@ export const searchDeals = tool({
     itineraryIncludes: z
       .array(z.string())
       .optional()
-      .describe('必须经停的港口列表，如 Santorini, Mykonos'),
+      .describe('必须经停/停靠/包含的港口列表，如 Singapore, Santorini, Mykonos。用户说“停靠/经停/途经/包含某港”时必须传这里，不要改用 departurePort'),
     itineraryExcludes: z
       .array(z.string())
       .optional()
@@ -84,11 +84,11 @@ export const searchDeals = tool({
     sailDateFrom: z
       .string()
       .optional()
-      .describe('最早出发日期 YYYY-MM-DD'),
+      .describe('最早出发日期 YYYY-MM-DD。用户给出具体日期或日期范围时必须传入'),
     sailDateTo: z
       .string()
       .optional()
-      .describe('最晚出发日期 YYYY-MM-DD'),
+      .describe('最晚出发日期 YYYY-MM-DD。用户给出“X 到 Y 之间”时必须传入'),
     durationMin: z.number().optional().describe('最短天数'),
     durationMax: z.number().optional().describe('最长天数'),
     cabinType: z

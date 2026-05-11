@@ -195,6 +195,96 @@ function buildInstructions(intentContext?: CruiseIntentContext): string {
     : basePrompt;
 }
 
+type SearchDealsInput = Record<string, unknown> & {
+  brand?: string;
+  departurePort?: string;
+  itineraryIncludes?: string[];
+  sailDateFrom?: string;
+  sailDateTo?: string;
+  roundtrip?: boolean;
+  tier?: string | string[];
+};
+
+function uniqueStrings(values: Array<string | undefined>): string[] {
+  return Array.from(
+    new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value))),
+  );
+}
+
+function usesColloquialLuxury(query: string): boolean {
+  return (
+    /奢华|豪华/i.test(query) &&
+    !/只看|仅看|限定|奢华品牌|高奢|luxury\s*tier|tier\s*luxury/i.test(query)
+  );
+}
+
+export function applyHardConstraintsToSearchDealsInput(
+  rawInput: unknown,
+  intentContext?: CruiseIntentContext,
+): SearchDealsInput {
+  const input =
+    rawInput && typeof rawInput === 'object'
+      ? ({ ...(rawInput as SearchDealsInput) } as SearchDealsInput)
+      : {};
+  const constraints = intentContext?.hardConstraints;
+
+  if (!constraints) return input;
+
+  if (constraints.brand && !input.brand) {
+    input.brand = constraints.brand;
+  }
+  if (constraints.departurePort && !input.departurePort) {
+    input.departurePort = constraints.departurePort;
+  }
+  if (constraints.sailDateFrom) {
+    input.sailDateFrom = constraints.sailDateFrom;
+  }
+  if (constraints.sailDateTo) {
+    input.sailDateTo = constraints.sailDateTo;
+  }
+  if (constraints.roundtrip && input.roundtrip == null) {
+    input.roundtrip = true;
+  }
+  if (constraints.itineraryIncludes?.length) {
+    input.itineraryIncludes = uniqueStrings([
+      ...(Array.isArray(input.itineraryIncludes) ? input.itineraryIncludes : []),
+      ...constraints.itineraryIncludes,
+    ]);
+  }
+  if (
+    intentContext &&
+    input.tier === 'luxury' &&
+    usesColloquialLuxury(intentContext.originalQuery)
+  ) {
+    input.tier = ['premium', 'luxury'];
+  }
+
+  return input;
+}
+
+function createTools(intentContext?: CruiseIntentContext): typeof cruiseTools {
+  if (!intentContext) return cruiseTools;
+
+  const searchDealsWithHardConstraints = {
+    ...searchDeals,
+    execute: async (input: unknown) => {
+      const effectiveInput = applyHardConstraintsToSearchDealsInput(
+        input,
+        intentContext,
+      );
+      if (!searchDeals.execute) {
+        throw new Error('searchDeals execute handler is unavailable');
+      }
+      return searchDeals.execute(effectiveInput as never, undefined as never);
+    },
+  } as typeof searchDeals;
+
+  return {
+    ...cruiseTools,
+    searchDeals: searchDealsWithHardConstraints,
+  };
+}
+
 /**
  * 创建游速达智能邮轮顾问 Agent
  *
@@ -212,7 +302,7 @@ export function createCruiseAgent(
   return new ToolLoopAgent({
     model,
     instructions,
-    tools: cruiseTools,
+    tools: createTools(options.intentContext),
     prepareStep: ({ steps, stepNumber }) => {
       if (shouldForceFinalAnswer(stepNumber, steps)) {
         return {

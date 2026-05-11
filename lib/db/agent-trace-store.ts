@@ -118,6 +118,7 @@ function summarizeToolOutput(output: unknown): unknown {
     coverageStatus: record.coverageStatus,
     noResultReason: record.noResultReason,
     exactMatch: record.exactMatch,
+    appliedFilters: record.appliedFilters,
     query: record.query,
     requestedQuery: record.requestedQuery,
     purpose: record.purpose,

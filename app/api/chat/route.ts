@@ -5,7 +5,10 @@ import {
 } from 'ai';
 import { createZhipu } from 'zhipu-ai-provider';
 import { createOpenAI } from '@ai-sdk/openai';
-import { createCruiseAgent } from '@/lib/ai/agent';
+import {
+  applyHardConstraintsToSearchDealsInput,
+  createCruiseAgent,
+} from '@/lib/ai/agent';
 import { detectCruiseIntent } from '@/lib/ai/intent';
 import {
   ABORTED_ASSISTANT_FALLBACK_TEXT,
@@ -107,11 +110,18 @@ export async function POST(req: Request) {
           toolResultCount += toolResults.length;
         }
         for (const toolResult of toolResults ?? []) {
+          const toolInput =
+            toolResult.toolName === 'searchDeals'
+              ? applyHardConstraintsToSearchDealsInput(
+                  toolResult.input,
+                  intentContext,
+                )
+              : toolResult.input;
           saveAgentStep({
             runId,
             stepNumber,
             toolName: toolResult.toolName,
-            toolInput: toolResult.input,
+            toolInput,
             toolOutput: toolResult.output,
           });
         }
