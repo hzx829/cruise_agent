@@ -8,8 +8,9 @@ $ErrorActionPreference = 'Stop'
 
 # Keep this script deterministic: deploy the committed Git HEAD only.
 $ServerUser = 'root'
-$ServerHost = '211.149.161.68'
-$ServerPort = 22000
+$ServerHost = '101.132.141.97'
+$ServerPort = 22
+$IdentityFile = (Resolve-Path (Join-Path $PSScriptRoot '..\..\cruiseswift.pem')).Path
 $RemoteAppDir = '/srv/cruise_agent'
 $RemoteDataDir = '/data'
 $Domain = 'www.cruiseswift.com'
@@ -45,12 +46,12 @@ function RunSshScript([string]$Script, [string]$ArgsLine = '') {
   [System.IO.File]::WriteAllText($localScript, $normalizedScript, $utf8NoBom)
 
   try {
-    RunNative 'scp' @('-P', "$ServerPort", $localScript, "${target}:$remoteScript")
+    RunNative 'scp' @('-i', $IdentityFile, '-o', 'StrictHostKeyChecking=accept-new', '-P', "$ServerPort", $localScript, "${target}:$remoteScript")
 
     if ($ArgsLine) {
-      & ssh -p $ServerPort $target "bash '$remoteScript' $ArgsLine; rc=`$?; rm -f '$remoteScript'; exit `$rc"
+      & ssh -i $IdentityFile -o StrictHostKeyChecking=accept-new -p $ServerPort $target "bash '$remoteScript' $ArgsLine; rc=`$?; rm -f '$remoteScript'; exit `$rc"
     } else {
-      & ssh -p $ServerPort $target "bash '$remoteScript'; rc=`$?; rm -f '$remoteScript'; exit `$rc"
+      & ssh -i $IdentityFile -o StrictHostKeyChecking=accept-new -p $ServerPort $target "bash '$remoteScript'; rc=`$?; rm -f '$remoteScript'; exit `$rc"
     }
     if ($LASTEXITCODE -ne 0) {
       throw "remote script failed with exit code $LASTEXITCODE"
@@ -151,8 +152,8 @@ function Deploy-Update {
     RunNative 'git' @('-C', $repoRoot, 'archive', '--format=tar', "--output=$archive", 'HEAD')
 
     Info 'Uploading package and environment'
-    RunNative 'scp' @('-P', "$ServerPort", $archive, "${ServerUser}@${ServerHost}:$remoteArchive")
-    RunNative 'scp' @('-P', "$ServerPort", $envFile, "${ServerUser}@${ServerHost}:$remoteEnv")
+    RunNative 'scp' @('-i', $IdentityFile, '-o', 'StrictHostKeyChecking=accept-new', '-P', "$ServerPort", $archive, "${ServerUser}@${ServerHost}:$remoteArchive")
+    RunNative 'scp' @('-i', $IdentityFile, '-o', 'StrictHostKeyChecking=accept-new', '-P', "$ServerPort", $envFile, "${ServerUser}@${ServerHost}:$remoteEnv")
 
     Info 'Building and switching release on server'
     $script = @'
@@ -177,6 +178,10 @@ grep -q '^AGENT_DB_PATH=' "${BUILD_DIR}/.env.local" || echo "AGENT_DB_PATH=${DAT
 echo "${COMMIT}" > "${BUILD_DIR}/.deploy-revision"
 
 cd "${BUILD_DIR}"
+PNPM_MAJOR=$(pnpm -v | cut -d. -f1)
+if [[ "${PNPM_MAJOR}" -ge 11 ]]; then
+  npm install -g pnpm@10
+fi
 pnpm install --frozen-lockfile
 pnpm build
 

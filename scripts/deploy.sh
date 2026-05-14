@@ -34,6 +34,17 @@ error()   { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 SSH="ssh -p ${SERVER_PORT} ${SERVER_USER}@${SERVER_HOST}"
 SCP="scp -P ${SERVER_PORT}"
 
+# Alibaba Cloud migration override.
+SERVER_HOST="101.132.141.97"
+SERVER_PORT="22"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+WORKSPACE_DIR="$(dirname "$PROJECT_DIR")"
+SSH_KEY="${SSH_KEY:-${WORKSPACE_DIR}/cruiseswift.pem}"
+CERTBOT_EMAIL="${CERTBOT_EMAIL:-admin@cruiseswift.com}"
+SSH="ssh -i ${SSH_KEY} -o StrictHostKeyChecking=accept-new -p ${SERVER_PORT} ${SERVER_USER}@${SERVER_HOST}"
+SCP="scp -i ${SSH_KEY} -o StrictHostKeyChecking=accept-new -P ${SERVER_PORT}"
+
 # ---- 检查配置 ----
 check_config() {
     [[ -z "$SERVER_HOST" ]] && error "请先在脚本顶部填写 SERVER_HOST（服务器 IP）"
@@ -101,7 +112,7 @@ setup_nginx() {
 
     NGINX_CONF="server {
     listen 80;
-    server_name ${DOMAIN} www.${DOMAIN};
+    server_name ${DOMAIN};
 
     location / {
         proxy_pass http://127.0.0.1:${APP_PORT};
@@ -123,7 +134,7 @@ setup_nginx() {
 
     success "Nginx 配置完成"
     info "SSL 证书申请中（需要域名已解析到服务器 IP）..."
-    $SSH "certbot --nginx -d ${DOMAIN} -d www.${DOMAIN} --non-interactive --agree-tos -m admin@${DOMAIN} || true"
+    $SSH "certbot --nginx -d ${DOMAIN} --non-interactive --agree-tos -m ${CERTBOT_EMAIL} || true"
 }
 
 # ============================================================
