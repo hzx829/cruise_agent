@@ -10,6 +10,7 @@ export { analyzePrices } from './analyze-prices';
 export { getTrackingOverview } from './get-tracking-overview';
 export { listDestinations } from './list-destinations';
 export { listCabinTypes } from './list-cabin-types';
+export { lookupShips } from './lookup-ships';
 
 // 🌐 知识类工具 — 数据来自互联网，回答开放性问题
 export { webSearch } from './web-search';

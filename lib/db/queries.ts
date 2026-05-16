@@ -374,6 +374,197 @@ function attachRouteDetails<T extends DealRow | TopDrop>(deals: T[]): T[] {
   return deals;
 }
 
+type ShipLookupRow = {
+  ship_id: string;
+  brand_id: string;
+  canonical_name: string;
+  brand_name: string;
+  brand_name_cn: string | null;
+  brand_tier: string;
+  brand_name_display: string | null;
+  brand_short_name_display: string | null;
+  localized_ship_name: string | null;
+  english_ship_name: string | null;
+  chinese_ship_name: string | null;
+  active_deal_count: number;
+  first_sail_date: string | null;
+  last_sail_date: string | null;
+  min_price: number | null;
+  currency: string | null;
+  destinations: string | null;
+};
+
+function uniqueNonEmpty(values: string[]): string[] {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
+const GENERIC_SHIP_LOOKUP_TERMS = new Set([
+  'msc',
+  'msc cruises',
+  'msc地中海邮轮',
+  '地中海邮轮',
+  '地中海游轮',
+  '地中海',
+  '邮轮',
+  '游轮',
+  'cruise',
+  'cruises',
+]);
+
+const SHIP_TEXT_ALIASES: Record<string, string[]> = {
+  歐羅巴: ['欧罗巴'],
+  歐羅巴號: ['欧罗巴号'],
+  地中海歐羅巴號: ['地中海欧罗巴号'],
+};
+
+function expandShipLookupTerms(query: string): string[] {
+  const raw = query.trim();
+  const pieces = raw
+    .split(/(?:\s+|[,，、/|；;]+|和|与|跟|及|vs\.?)/i)
+    .map((part) => part.trim())
+    .filter((part) => part.length >= 2);
+  const normalized = normalizeSearchText(raw);
+  const terms = [raw, normalized, ...pieces];
+
+  for (const term of [raw, ...pieces]) {
+    for (const alias of SHIP_TEXT_ALIASES[term] ?? []) {
+      terms.push(alias);
+    }
+  }
+
+  const uniqueTerms = uniqueNonEmpty(terms).filter((term) => term.length >= 2);
+  const hasSpecificTerm = uniqueTerms.some(
+    (term) => !GENERIC_SHIP_LOOKUP_TERMS.has(normalizeSearchText(term)),
+  );
+
+  return hasSpecificTerm
+    ? uniqueTerms.filter(
+        (term) => !GENERIC_SHIP_LOOKUP_TERMS.has(normalizeSearchText(term)),
+      )
+    : uniqueTerms;
+}
+
+export function lookupShips(filters: {
+  query: string;
+  brand?: string;
+  locale?: string;
+  limit?: number;
+}) {
+  const terms = expandShipLookupTerms(filters.query);
+  if (terms.length === 0) {
+    return [];
+  }
+
+  const db = getDb();
+  const localeSql = quoteSqlLiteral(normalizeLocale(filters.locale));
+  const params: (string | number)[] = [];
+  const brandId = filters.brand ? resolveBrandId(filters.brand) : null;
+  const brandFilterSql = brandId ? 'AND s.brand_id = ?' : '';
+  if (brandId) params.push(brandId);
+
+  const searchConditions: string[] = [];
+  for (const term of terms) {
+    const likeTerm = `%${term}%`;
+    searchConditions.push(`(
+      s.canonical_name LIKE ?
+      OR s.normalized_name LIKE ?
+      OR EXISTS (
+        SELECT 1
+        FROM ship_translations st_search
+        WHERE st_search.ship_id = s.id
+          AND (st_search.name LIKE ? OR st_search.short_name LIKE ?)
+      )
+    )`);
+    params.push(likeTerm, likeTerm, likeTerm, likeTerm);
+  }
+
+  const limit = Math.min(filters.limit || 8, 20);
+  const sql = `
+    SELECT
+      s.id AS ship_id,
+      s.brand_id,
+      s.canonical_name,
+      b.name AS brand_name,
+      b.name_cn AS brand_name_cn,
+      b.tier AS brand_tier,
+      COALESCE(bt_locale.name, b.name_cn, b.name) AS brand_name_display,
+      COALESCE(bt_locale.short_name, bt_locale.name, b.name_cn, b.name) AS brand_short_name_display,
+      st_locale.name AS localized_ship_name,
+      st_en.name AS english_ship_name,
+      st_zh.name AS chinese_ship_name,
+      COUNT(DISTINCT d.id) AS active_deal_count,
+      MIN(d.sail_date) AS first_sail_date,
+      MAX(d.sail_date) AS last_sail_date,
+      MIN(NULLIF(d.price, 0)) AS min_price,
+      d.price_currency AS currency,
+      GROUP_CONCAT(DISTINCT d.destination) AS destinations
+    FROM ships s
+    JOIN brands b ON b.id = s.brand_id
+    LEFT JOIN brand_translations bt_locale
+      ON bt_locale.brand_id = b.id AND bt_locale.locale = ${localeSql}
+    LEFT JOIN ship_translations st_locale
+      ON st_locale.ship_id = s.id AND st_locale.locale = ${localeSql}
+    LEFT JOIN ship_translations st_en
+      ON st_en.ship_id = s.id AND st_en.locale = 'en'
+    LEFT JOIN ship_translations st_zh
+      ON st_zh.ship_id = s.id AND st_zh.locale = 'zh-CN'
+    LEFT JOIN deals d
+      ON d.ship_id = s.id
+     AND d.price > 0
+     AND (d.sail_date IS NULL OR d.sail_date >= ?)
+    WHERE b.is_active = 1
+      ${brandFilterSql}
+      AND (${searchConditions.join(' OR ')})
+    GROUP BY
+      s.id, s.brand_id, s.canonical_name, b.name, b.name_cn, b.tier,
+      bt_locale.name, bt_locale.short_name, st_locale.name, st_en.name, st_zh.name,
+      d.price_currency
+    ORDER BY active_deal_count DESC, s.brand_id, s.canonical_name
+    LIMIT ?
+  `;
+
+  const rows = db.prepare(sql).all(todayIso(), ...params, limit) as ShipLookupRow[];
+  const ships = rows.map((row) => ({
+    shipId: row.ship_id,
+    brandId: row.brand_id,
+    brand:
+      row.brand_short_name_display ||
+      row.brand_name_display ||
+      row.brand_name_cn ||
+      row.brand_name,
+    brandRaw: row.brand_name,
+    brandChineseName: row.brand_name_cn,
+    brandTier: row.brand_tier,
+    canonicalName: row.canonical_name,
+    englishName: row.english_ship_name || row.canonical_name,
+    chineseName: row.chinese_ship_name,
+    displayName:
+      row.localized_ship_name ||
+      row.chinese_ship_name ||
+      row.english_ship_name ||
+      row.canonical_name,
+    activeDealCount: row.active_deal_count,
+    firstSailDate: row.first_sail_date,
+    lastSailDate: row.last_sail_date,
+    minPrice: row.min_price,
+    currency: row.currency,
+    destinations: row.destinations
+      ? uniqueNonEmpty(row.destinations.split(','))
+      : [],
+    dataSource: 'local_ship_index',
+  }));
+
+  if (brandId) return ships;
+
+  const seenShips = new Set<string>();
+  return ships.filter((ship) => {
+    const key = normalizeSearchText(`${ship.canonicalName} ${ship.chineseName ?? ''}`);
+    if (seenShips.has(key)) return false;
+    seenShips.add(key);
+    return true;
+  });
+}
+
 function addDestinationFilter(
   conditions: string[],
   params: (string | number)[],
@@ -419,6 +610,42 @@ function addDestinationFilter(
   for (const term of searchTerms) {
     const likeTerm = `%${term}%`;
     params.push(likeTerm, likeTerm, likeTerm);
+  }
+}
+
+function addShipFilter(
+  conditions: string[],
+  params: (string | number)[],
+  ship: string | undefined,
+  tableAlias?: string
+) {
+  if (!ship) return;
+
+  const searchTerms = expandShipLookupTerms(ship);
+  if (searchTerms.length === 0) return;
+
+  const prefix = tableAlias ? `${tableAlias}.` : '';
+  const perTermConditions = searchTerms.map(() => `(
+    ${prefix}ship_name LIKE ?
+    OR EXISTS (
+      SELECT 1
+      FROM ships ship_lookup
+      LEFT JOIN ship_translations ship_translation_lookup
+        ON ship_translation_lookup.ship_id = ship_lookup.id
+      WHERE ship_lookup.id = ${prefix}ship_id
+        AND (
+          ship_lookup.canonical_name LIKE ?
+          OR ship_lookup.normalized_name LIKE ?
+          OR ship_translation_lookup.name LIKE ?
+          OR ship_translation_lookup.short_name LIKE ?
+        )
+    )
+  )`);
+
+  conditions.push(`(${perTermConditions.join(' OR ')})`);
+  for (const term of searchTerms) {
+    const likeTerm = `%${term}%`;
+    params.push(likeTerm, likeTerm, likeTerm, likeTerm, likeTerm);
   }
 }
 
@@ -584,6 +811,7 @@ function buildAppliedFilters(filters: SearchFilters): SearchAppliedFilters {
   if (filters.brand) applied.brand = filters.brand;
   if (filters.destination) applied.destination = filters.destination;
   if (filters.destinationId) applied.destinationId = filters.destinationId;
+  if (filters.ship) applied.ship = filters.ship;
   if (filters.departurePort) applied.departurePort = filters.departurePort;
   if (filters.arrivalPort) applied.arrivalPort = filters.arrivalPort;
   if (filters.itineraryIncludes?.length) {
@@ -717,6 +945,7 @@ function searchDealsCore(filters: SearchFilters): SearchDealsCoreResult {
 
   addBrandFilter(conditions, params, filters.brand, 'd.brand_id', filters);
   addDestinationFilter(conditions, params, filters, 'd');
+  addShipFilter(conditions, params, filters.ship, 'd');
   if (filters.priceMin != null) {
     conditions.push('d.price >= ?');
     params.push(filters.priceMin);

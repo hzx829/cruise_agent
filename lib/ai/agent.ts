@@ -5,7 +5,6 @@ import {
   type CruiseIntentContext,
 } from './intent';
 import {
-  // 🔒 价格类工具 (DB)
   searchDeals,
   getTopPriceDrops,
   getPriceHistory,
@@ -17,16 +16,14 @@ import {
   getTrackingOverview,
   listDestinations,
   listCabinTypes,
-  // 🌐 知识类工具 (Web)
+  lookupShips,
   webSearch,
   cruiseEncyclopedia,
-  // ✍️ 创作类工具
   generateCopywriting,
   generateChart,
 } from './tools';
 
 const cruiseTools = {
-  // 🔒 价格类 — 数据来自爬虫，准确可靠
   searchDeals,
   getTopPriceDrops,
   getPriceHistory,
@@ -38,10 +35,9 @@ const cruiseTools = {
   getTrackingOverview,
   listDestinations,
   listCabinTypes,
-  // 🌐 知识类 — 数据来自互联网
+  lookupShips,
   webSearch,
   cruiseEncyclopedia,
-  // ✍️ 创作类
   generateCopywriting,
   generateChart,
 };
@@ -56,16 +52,18 @@ const PRICE_QUOTE_TOOLS: CruiseToolName[] = [
   'compareCruises',
   'listDestinations',
   'listCabinTypes',
+  'lookupShips',
 ];
 
 const MARKET_SUPPLY_TOOLS: CruiseToolName[] = [
   'searchDeals',
+  'lookupShips',
   'webSearch',
   'listDestinations',
   'listCabinTypes',
 ];
 
-const REVIEW_TOOLS: CruiseToolName[] = ['webSearch', 'cruiseEncyclopedia'];
+const REVIEW_TOOLS: CruiseToolName[] = ['lookupShips', 'webSearch', 'cruiseEncyclopedia'];
 
 const COPYWRITING_TOOLS: CruiseToolName[] = [
   'searchDeals',
@@ -178,7 +176,7 @@ function chooseActiveTools(
       break;
     case 'general':
       activeTools = intentContext.needsWeb
-        ? ['webSearch', 'cruiseEncyclopedia', 'searchDeals']
+        ? ['lookupShips', 'webSearch', 'cruiseEncyclopedia', 'searchDeals']
         : undefined;
       break;
   }

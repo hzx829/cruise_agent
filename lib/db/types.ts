@@ -123,6 +123,7 @@ export interface SearchFilters {
   locale?: 'zh-CN' | 'en' | string;
   destinationId?: string;
   destination?: string;
+  ship?: string;
   departurePort?: string;
   arrivalPort?: string;
   itineraryIncludes?: string[];
@@ -147,6 +148,7 @@ export interface SearchAppliedFilters {
   brand?: string;
   destination?: string;
   destinationId?: string;
+  ship?: string;
   departurePort?: string;
   arrivalPort?: string;
   itineraryIncludes?: string[];

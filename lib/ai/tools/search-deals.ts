@@ -63,6 +63,10 @@ export const searchDeals = tool({
       .string()
       .optional()
       .describe('规范化目的地 ID，来自 listDestinations 返回的 id；比 destination 文本更准确'),
+    ship: z
+      .string()
+      .optional()
+      .describe('船名或中文船名，例如 MSC Euribia、地中海神女号、欧罗巴号。用户明确问某艘船时传入'),
     departurePort: z
       .string()
       .optional()
