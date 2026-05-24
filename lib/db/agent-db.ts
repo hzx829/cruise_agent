@@ -91,10 +91,28 @@ agentDb.exec(`
     id TEXT PRIMARY KEY,
     chat_id TEXT,
     prompt_id TEXT,
+    prompt_version INTEGER,
+    prompt_hash TEXT,
     model TEXT,
     user_query TEXT,
     detected_intent TEXT,
+    status TEXT NOT NULL DEFAULT 'running',
+    started_at TEXT NOT NULL DEFAULT (datetime('now')),
+    ended_at TEXT,
+    duration_ms INTEGER,
+    finish_reason TEXT,
+    is_aborted INTEGER NOT NULL DEFAULT 0,
+    assistant_text_len INTEGER,
+    empty_assistant_count INTEGER,
+    tool_step_count INTEGER NOT NULL DEFAULT 0,
+    tool_result_count INTEGER NOT NULL DEFAULT 0,
+    prompt_tokens INTEGER,
+    completion_tokens INTEGER,
+    total_tokens INTEGER,
+    error_type TEXT,
+    error_message TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE SET NULL
   );
 
@@ -105,15 +123,96 @@ agentDb.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     run_id TEXT NOT NULL,
     step_number INTEGER NOT NULL,
+    tool_call_id TEXT,
     tool_name TEXT,
+    started_at TEXT,
+    ended_at TEXT,
+    duration_ms INTEGER,
+    success INTEGER,
+    error_type TEXT,
+    error_message TEXT,
+    raw_tool_input_json TEXT,
+    effective_tool_input_json TEXT,
     tool_input_json TEXT,
     tool_output_summary_json TEXT,
+    tool_output_hash TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (run_id) REFERENCES agent_runs(id) ON DELETE CASCADE
   );
 
   CREATE INDEX IF NOT EXISTS idx_agent_steps_run_id ON agent_steps(run_id);
   CREATE INDEX IF NOT EXISTS idx_agent_steps_tool_name ON agent_steps(tool_name);
+`);
+
+function columnExists(tableName: string, columnName: string): boolean {
+  const rows = agentDb.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{
+    name: string;
+  }>;
+  return rows.some((row) => row.name === columnName);
+}
+
+function ensureColumn(
+  tableName: 'agent_runs' | 'agent_steps',
+  columnName: string,
+  definition: string,
+): void {
+  if (columnExists(tableName, columnName)) return;
+  agentDb.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+}
+
+ensureColumn('agent_runs', 'prompt_version', 'INTEGER');
+ensureColumn('agent_runs', 'prompt_hash', 'TEXT');
+ensureColumn('agent_runs', 'status', "TEXT NOT NULL DEFAULT 'running'");
+ensureColumn('agent_runs', 'started_at', 'TEXT');
+ensureColumn('agent_runs', 'ended_at', 'TEXT');
+ensureColumn('agent_runs', 'duration_ms', 'INTEGER');
+ensureColumn('agent_runs', 'finish_reason', 'TEXT');
+ensureColumn('agent_runs', 'is_aborted', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('agent_runs', 'assistant_text_len', 'INTEGER');
+ensureColumn('agent_runs', 'empty_assistant_count', 'INTEGER');
+ensureColumn('agent_runs', 'tool_step_count', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('agent_runs', 'tool_result_count', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('agent_runs', 'prompt_tokens', 'INTEGER');
+ensureColumn('agent_runs', 'completion_tokens', 'INTEGER');
+ensureColumn('agent_runs', 'total_tokens', 'INTEGER');
+ensureColumn('agent_runs', 'error_type', 'TEXT');
+ensureColumn('agent_runs', 'error_message', 'TEXT');
+ensureColumn('agent_runs', 'updated_at', 'TEXT');
+
+ensureColumn('agent_steps', 'tool_call_id', 'TEXT');
+ensureColumn('agent_steps', 'started_at', 'TEXT');
+ensureColumn('agent_steps', 'ended_at', 'TEXT');
+ensureColumn('agent_steps', 'duration_ms', 'INTEGER');
+ensureColumn('agent_steps', 'success', 'INTEGER');
+ensureColumn('agent_steps', 'error_type', 'TEXT');
+ensureColumn('agent_steps', 'error_message', 'TEXT');
+ensureColumn('agent_steps', 'raw_tool_input_json', 'TEXT');
+ensureColumn('agent_steps', 'effective_tool_input_json', 'TEXT');
+ensureColumn('agent_steps', 'tool_output_hash', 'TEXT');
+ensureColumn('agent_steps', 'updated_at', 'TEXT');
+
+agentDb.exec(`
+  UPDATE agent_runs
+  SET started_at = COALESCE(started_at, created_at),
+      updated_at = COALESCE(updated_at, created_at),
+      status = COALESCE(status, 'running')
+  WHERE started_at IS NULL OR updated_at IS NULL OR status IS NULL;
+
+  UPDATE agent_steps
+  SET started_at = COALESCE(started_at, created_at),
+      ended_at = COALESCE(ended_at, created_at),
+      updated_at = COALESCE(updated_at, created_at),
+      effective_tool_input_json = COALESCE(effective_tool_input_json, tool_input_json),
+      success = COALESCE(success, 1)
+  WHERE started_at IS NULL
+     OR ended_at IS NULL
+     OR updated_at IS NULL
+     OR effective_tool_input_json IS NULL
+     OR success IS NULL;
+
+  CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON agent_runs(status);
+  CREATE INDEX IF NOT EXISTS idx_agent_steps_tool_call_id ON agent_steps(tool_call_id);
 `);
 
 export default agentDb;

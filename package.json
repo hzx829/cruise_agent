@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "eval:natural-agent": "node scripts/evaluate-natural-agent-traces.mjs"
+    "trace:inspect": "node scripts/inspect-agent-traces.mjs",
+    "eval:natural-agent": "node scripts/evaluate-natural-agent-traces.mjs",
+    "smoke:natural-agent": "node scripts/run-natural-agent-smoke.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.41",

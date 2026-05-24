@@ -1,8 +1,10 @@
 import {
   createAgentUIStreamResponse,
   createIdGenerator,
+  type LanguageModelUsage,
   type UIMessage,
 } from 'ai';
+import { createHash } from 'crypto';
 import { createZhipu } from 'zhipu-ai-provider';
 import { createOpenAI } from '@ai-sdk/openai';
 import {
@@ -17,8 +19,13 @@ import {
   ensureRenderableAssistantMessage,
   hasRenderableContent,
 } from '@/lib/ai/message-content';
+import { getActivePromptTemplate } from '@/lib/ai/prompt-store';
 import { loadChat, saveMessages, updateChatTitle, createChat } from '@/lib/db/chat-store';
-import { createAgentRun, saveAgentStep } from '@/lib/db/agent-trace-store';
+import {
+  createAgentRun,
+  saveAgentToolCall,
+  updateAgentRun,
+} from '@/lib/db/agent-trace-store';
 
 export const maxDuration = 60;
 
@@ -57,6 +64,43 @@ function extractTitle(message: UIMessage): string {
   return extractMessageText(message).slice(0, 50) || 'New Chat';
 }
 
+function extractAllText(message: UIMessage): string {
+  return message.parts
+    .filter((part) => part.type === 'text')
+    .map((part) => part.text)
+    .join('\n');
+}
+
+function sumAssistantTextLength(messages: UIMessage[]): number {
+  return messages
+    .filter((msg) => msg.role === 'assistant')
+    .reduce((sum, msg) => sum + extractAllText(msg).trim().length, 0);
+}
+
+function hashPrompt(content: string): string {
+  return createHash('sha256').update(content).digest('hex');
+}
+
+function getUsageTokens(usage: LanguageModelUsage | undefined): {
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
+} {
+  if (!usage) {
+    return { promptTokens: null, completionTokens: null, totalTokens: null };
+  }
+
+  return {
+    promptTokens: usage.inputTokens ?? null,
+    completionTokens: usage.outputTokens ?? null,
+    totalTokens: usage.totalTokens ?? null,
+  };
+}
+
+function toIsoTime(value: number): string {
+  return new Date(value).toISOString();
+}
+
 export async function POST(req: Request) {
   const { message, id }: { message: UIMessage; id: string } = await req.json();
 
@@ -86,47 +130,69 @@ export async function POST(req: Request) {
   const intentContext = latestUserText
     ? detectCruiseIntent(latestUserText)
     : undefined;
-  const agent = createCruiseAgent(getModel(), { intentContext });
+  const activePrompt = getActivePromptTemplate();
+  const runStartedAt = Date.now();
   const runId = createAgentRun({
     chatId: id,
     model: `${process.env.AI_PROVIDER || 'zhipu'}/${process.env.CHAT_MODEL || 'glm-4-flash'}`,
     userQuery: latestUserText,
     detectedIntent: intentContext?.intent,
+    promptId: activePrompt.id,
+    promptVersion: activePrompt.version,
+    promptHash: hashPrompt(activePrompt.content),
+    startedAt: toIsoTime(runStartedAt),
   });
-  const runStartedAt = Date.now();
   let toolStepCount = 0;
   let toolResultCount = 0;
   let savedErrorFallback = false;
+  let totalUsage: LanguageModelUsage | undefined;
+  const agent = createCruiseAgent(getModel(), {
+    intentContext,
+    promptTemplate: activePrompt.content,
+    onToolCallFinish: async (event) => {
+      const endedAtMs = Date.now();
+      const durationMs = Math.max(0, Math.round(event.durationMs));
+      const rawToolInput = event.toolCall.input;
+      const effectiveToolInput =
+        event.toolCall.toolName === 'searchDeals'
+          ? applyHardConstraintsToSearchDealsInput(rawToolInput, intentContext)
+          : rawToolInput;
 
-  return createAgentUIStreamResponse({
+      try {
+        saveAgentToolCall({
+          runId,
+          stepNumber: event.stepNumber,
+          toolCallId: event.toolCall.toolCallId,
+          toolName: event.toolCall.toolName,
+          rawToolInput,
+          effectiveToolInput,
+          toolOutput: event.success ? event.output : undefined,
+          durationMs,
+          success: event.success,
+          error: event.success
+            ? undefined
+            : (event as { error?: unknown }).error,
+          startedAt: toIsoTime(endedAtMs - durationMs),
+          endedAt: toIsoTime(endedAtMs),
+        });
+      } catch (error) {
+        console.error('[agent-trace] failed to persist tool call', error);
+      }
+    },
+    onFinish: (event) => {
+      totalUsage = event.totalUsage;
+    },
+  });
+
+  const response = await createAgentUIStreamResponse({
     agent,
     uiMessages: allMessages,
     generateMessageId,
     timeout: { totalMs: 55_000, stepMs: 35_000, chunkMs: 20_000 },
-    onStepFinish: async ({ stepNumber, toolResults }) => {
-      try {
-        if (toolResults?.length) {
-          toolStepCount += 1;
-          toolResultCount += toolResults.length;
-        }
-        for (const toolResult of toolResults ?? []) {
-          const toolInput =
-            toolResult.toolName === 'searchDeals'
-              ? applyHardConstraintsToSearchDealsInput(
-                  toolResult.input,
-                  intentContext,
-                )
-              : toolResult.input;
-          saveAgentStep({
-            runId,
-            stepNumber,
-            toolName: toolResult.toolName,
-            toolInput,
-            toolOutput: toolResult.output,
-          });
-        }
-      } catch (error) {
-        console.error('[agent-trace] failed to persist step', error);
+    onStepFinish: async ({ toolResults }) => {
+      if (toolResults?.length) {
+        toolStepCount += 1;
+        toolResultCount += toolResults.length;
       }
     },
     onError: (error) => {
@@ -136,6 +202,20 @@ export async function POST(req: Request) {
         durationMs: Date.now() - runStartedAt,
         error,
       });
+
+      try {
+        updateAgentRun({
+          runId,
+          status: 'error',
+          endedAt: toIsoTime(Date.now()),
+          durationMs: Date.now() - runStartedAt,
+          toolStepCount,
+          toolResultCount,
+          error,
+        });
+      } catch (persistError) {
+        console.error('[agent-trace] failed to persist run error', persistError);
+      }
 
       if (!savedErrorFallback) {
         try {
@@ -171,6 +251,25 @@ export async function POST(req: Request) {
         saveMessages(id, messagesToSave);
       }
 
+      try {
+        const usageTokens = getUsageTokens(totalUsage);
+        updateAgentRun({
+          runId,
+          status: isAborted ? 'aborted' : 'completed',
+          endedAt: toIsoTime(Date.now()),
+          durationMs: Date.now() - runStartedAt,
+          finishReason: finishReason ?? null,
+          isAborted,
+          assistantTextLen: sumAssistantTextLength(messagesToSave),
+          emptyAssistantCount,
+          toolStepCount,
+          toolResultCount,
+          ...usageTokens,
+        });
+      } catch (persistError) {
+        console.error('[agent-trace] failed to persist run finish', persistError);
+      }
+
       console.info('[agent-run] finished', {
         runId,
         chatId: id,
@@ -190,4 +289,5 @@ export async function POST(req: Request) {
       }
     },
   });
+  return response;
 }

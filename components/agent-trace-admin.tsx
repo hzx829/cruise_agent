@@ -16,20 +16,49 @@ interface AgentTraceStep {
   id: number;
   runId: string;
   stepNumber: number;
+  toolCallId: string | null;
   toolName: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  durationMs: number | null;
+  success: boolean | null;
+  errorType: string | null;
+  errorMessage: string | null;
+  rawToolInput: unknown;
+  effectiveToolInput: unknown;
   toolInput: unknown;
   toolOutputSummary: unknown;
+  toolOutputHash: string | null;
   createdAt: string;
+  updatedAt: string | null;
 }
 
 interface AgentRunWithSteps {
   id: string;
   chat_id: string | null;
   prompt_id: string | null;
+  prompt_version: number | null;
+  prompt_hash: string | null;
   model: string | null;
   user_query: string | null;
   detected_intent: string | null;
+  status: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  duration_ms: number | null;
+  finish_reason: string | null;
+  is_aborted: number | null;
+  assistant_text_len: number | null;
+  empty_assistant_count: number | null;
+  tool_step_count: number | null;
+  tool_result_count: number | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  total_tokens: number | null;
+  error_type: string | null;
+  error_message: string | null;
   created_at: string;
+  updated_at: string | null;
   stepCount: number;
   toolNames: string[];
   steps: AgentTraceStep[];
@@ -80,6 +109,12 @@ function stringify(value: unknown): string {
   if (value == null) return '';
   if (typeof value === 'string') return value;
   return JSON.stringify(value, null, 2);
+}
+
+function formatDuration(value: number | null): string {
+  if (value == null) return '-';
+  if (value >= 60_000) return `${(value / 60_000).toFixed(1)}min`;
+  return `${value}ms`;
 }
 
 function paramsFromFilters(filters: {
@@ -356,13 +391,18 @@ export function AgentTraceAdmin() {
                   }`}
                   type="button"
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="truncate text-sm font-medium">
-                      {run.detected_intent || 'unknown'}
-                    </span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {formatTime(run.created_at)}
-                    </span>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="truncate text-sm font-medium">
+                    {run.detected_intent || 'unknown'}
+                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {formatTime(run.created_at)}
+                  </span>
+                </div>
+                  <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>{run.status || 'unknown'}</span>
+                    <span>{formatDuration(run.duration_ms)}</span>
+                    {run.total_tokens != null && <span>{run.total_tokens} tokens</span>}
                   </div>
                   <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
                     {run.user_query || '(empty query)'}
@@ -412,8 +452,17 @@ function TraceDetails({ run }: { run: AgentRunWithSteps }) {
           <Meta label="run" value={run.id} />
           <Meta label="chat" value={run.chat_id || '-'} />
           <Meta label="model" value={run.model || '-'} />
-          <Meta label="created" value={formatTime(run.created_at)} />
+          <Meta label="status" value={run.status || '-'} />
+          <Meta label="duration" value={formatDuration(run.duration_ms)} />
+          <Meta label="finish" value={run.finish_reason || '-'} />
+          <Meta label="tokens" value={String(run.total_tokens ?? '-')} />
+          <Meta label="prompt" value={run.prompt_version ? `v${run.prompt_version}` : '-'} />
         </div>
+        {run.error_message && (
+          <p className="mt-3 text-sm text-destructive">
+            {run.error_type || 'Error'}: {run.error_message}
+          </p>
+        )}
         <p className="mt-3 text-base font-medium">{run.user_query || '(empty query)'}</p>
       </div>
 
@@ -433,11 +482,19 @@ function TraceDetails({ run }: { run: AgentRunWithSteps }) {
                   </h2>
                 </div>
                 <span className="text-xs text-muted-foreground">
-                  {formatTime(step.createdAt)}
+                  {formatDuration(step.durationMs)} · {step.success === false ? 'error' : 'ok'} · {formatTime(step.createdAt)}
                 </span>
               </div>
+              {step.errorMessage && (
+                <p className="mb-3 text-sm text-destructive">
+                  {step.errorType || 'Error'}: {step.errorMessage}
+                </p>
+              )}
               <div className="grid gap-3 xl:grid-cols-2">
-                <TraceJson title="Input" value={step.toolInput} />
+                <TraceJson
+                  title="Input"
+                  value={step.effectiveToolInput ?? step.toolInput}
+                />
                 <TraceJson title="Output Summary" value={step.toolOutputSummary} />
               </div>
             </section>

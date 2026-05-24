@@ -1,4 +1,10 @@
-import { ToolLoopAgent, stepCountIs, type LanguageModel } from 'ai';
+import {
+  ToolLoopAgent,
+  stepCountIs,
+  type LanguageModel,
+  type ToolLoopAgentOnFinishCallback,
+  type ToolLoopAgentOnToolCallFinishCallback,
+} from 'ai';
 import { buildSystemPrompt } from './prompts';
 import {
   formatIntentContextForPrompt,
@@ -97,6 +103,9 @@ const FINAL_ANSWER_INSTRUCTIONS = `## 最终回答收束要求
 
 interface CreateCruiseAgentOptions {
   intentContext?: CruiseIntentContext;
+  promptTemplate?: string;
+  onFinish?: ToolLoopAgentOnFinishCallback<typeof cruiseTools>;
+  onToolCallFinish?: ToolLoopAgentOnToolCallFinishCallback<typeof cruiseTools>;
 }
 
 function withoutWebTools(tools: CruiseToolName[]): CruiseToolName[] {
@@ -186,8 +195,11 @@ function chooseActiveTools(
     : activeTools;
 }
 
-function buildInstructions(intentContext?: CruiseIntentContext): string {
-  const basePrompt = buildSystemPrompt();
+function buildInstructions(
+  intentContext?: CruiseIntentContext,
+  promptTemplate?: string,
+): string {
+  const basePrompt = buildSystemPrompt(promptTemplate);
   return intentContext
     ? `${basePrompt}\n\n${formatIntentContextForPrompt(intentContext)}`
     : basePrompt;
@@ -302,7 +314,10 @@ export function createCruiseAgent(
   model: LanguageModel,
   options: CreateCruiseAgentOptions = {},
 ) {
-  const instructions = buildInstructions(options.intentContext);
+  const instructions = buildInstructions(
+    options.intentContext,
+    options.promptTemplate,
+  );
 
   return new ToolLoopAgent({
     model,
@@ -321,6 +336,7 @@ export function createCruiseAgent(
         activeTools: chooseActiveTools(options.intentContext, steps),
       };
     },
+    experimental_onToolCallFinish: options.onToolCallFinish,
     // 允许最多 8 步：典型场景是 DB查询(1-2步) + 搜索(1步) + 综合回答(1步)
     stopWhen: stepCountIs(8),
     onStepFinish: async ({ stepNumber, toolCalls, usage }) => {
@@ -331,5 +347,6 @@ export function createCruiseAgent(
         );
       }
     },
+    onFinish: options.onFinish,
   });
 }

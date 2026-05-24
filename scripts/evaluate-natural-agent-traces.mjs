@@ -3,99 +3,48 @@
 import Database from 'better-sqlite3';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-
-const CASES = [
-  {
-    id: 1,
-    query: '天津港有船吗？',
-    expectedIntent: 'market_supply',
-    requiredTools: ['searchDeals', 'webSearch'],
-    requiredInputTerms: { searchDeals: ['天津'], webSearch: ['天津'] },
-    forbiddenResponseTerms: ['天津没有船'],
-  },
-  {
-    id: 2,
-    query: '天津港暑假最便宜的船',
-    expectedIntent: 'price_quote',
-    requiredTools: ['searchDeals'],
-    requiredInputTerms: { searchDeals: ['天津'] },
-    requireWebIfSearchDealsGap: true,
-  },
-  {
-    id: 3,
-    query: '不要上海，只看天津港',
-    expectedIntent: 'market_supply',
-    requiredInputTerms: { searchDeals: ['天津'] },
-    forbiddenInputTerms: { webSearch: ['上海'] },
-    forbiddenResponseTerms: ['上海出发', '上海母港', '上海港'],
-  },
-  {
-    id: 4,
-    query: '上海也可以，天津优先',
-    expectedIntent: 'market_supply',
-    requiredInputTerms: { searchDeals: ['天津'] },
-  },
-  {
-    id: 5,
-    query: '天津港皇家加勒比有吗',
-    expectedIntent: 'market_supply',
-    requiredTools: ['searchDeals'],
-    requiredInputTerms: { searchDeals: ['天津', '皇家'] },
-    requireWebIfSearchDealsGap: true,
-  },
-  {
-    id: 6,
-    query: 'MSC 中国母港有哪些',
-    expectedIntent: 'market_supply',
-    requiredTools: ['webSearch'],
-    requiredInputTerms: { webSearch: ['MSC', '中国'] },
-  },
-  {
-    id: 7,
-    query: '雅典往返，不要开口',
-    requiredTools: ['searchDeals'],
-    requiredInputTerms: { searchDeals: ['雅典', 'true'] },
-  },
-  {
-    id: 8,
-    query: '经停圣托里尼',
-    requiredTools: ['searchDeals'],
-    requiredInputTerms: { searchDeals: ['圣托里尼'] },
-  },
-  {
-    id: 9,
-    query: '皇家和 MSC 餐饮哪个好',
-    expectedIntent: 'comparison',
-    requiredAnyTool: ['webSearch', 'cruiseEncyclopedia'],
-    forbiddenTools: ['searchDeals'],
-  },
-  {
-    id: 10,
-    query: '这条 deal 值得买吗',
-    requiredAnyTool: ['searchDeals', 'getPriceHistory', 'webSearch', 'cruiseEncyclopedia'],
-  },
-  {
-    id: 11,
-    query: '不要联网，只看你接入的价格源',
-    forbiddenTools: ['webSearch', 'cruiseEncyclopedia'],
-  },
-  {
-    id: 12,
-    query: '帮我查网络上天津港最新邮轮信息',
-    requiredTools: ['webSearch'],
-    requiredInputTerms: { webSearch: ['天津'] },
-  },
-];
+import { CASES as DEFAULT_CASES } from './natural-agent-smoke-cases.mjs';
 
 function parseArgs(argv) {
   return {
     allowMissing: argv.includes('--allow-missing'),
     json: argv.includes('--json'),
+    casesPath: argv.find((arg) => arg.startsWith('--cases='))?.slice('--cases='.length),
+    caseIds:
+      argv
+        .find((arg) => arg.startsWith('--case='))
+        ?.slice('--case='.length)
+        .split(',')
+        .map((value) => Number(value.trim()))
+        .filter(Number.isFinite) ?? [],
+    sinceRunStart:
+      argv.find((arg) => arg.startsWith('--since-run-start='))?.slice(
+        '--since-run-start='.length,
+      ) ||
+      argv.find((arg) => arg.startsWith('--from='))?.slice('--from='.length),
     dbPath:
       argv.find((arg) => arg.startsWith('--db='))?.slice('--db='.length) ||
       process.env.AGENT_DB_PATH ||
       path.resolve(process.cwd(), 'data/agent.db'),
   };
+}
+
+async function loadCases(casesPath) {
+  if (!casesPath) return DEFAULT_CASES;
+
+  const resolved = path.resolve(process.cwd(), casesPath);
+  if (!existsSync(resolved)) {
+    throw new Error(`cases file not found: ${resolved}`);
+  }
+
+  if (resolved.endsWith('.json')) {
+    const { readFile } = await import('node:fs/promises');
+    const parsed = JSON.parse(await readFile(resolved, 'utf8'));
+    return Array.isArray(parsed) ? parsed : parsed.cases;
+  }
+
+  const mod = await import(`file://${resolved}`);
+  return mod.CASES ?? mod.default;
 }
 
 function parseJson(value) {
@@ -111,16 +60,23 @@ function textOf(value) {
   return JSON.stringify(value ?? '');
 }
 
-function getLatestRun(db, query) {
+function getLatestRun(db, query, options) {
+  const where = ['user_query = ?'];
+  const params = [query];
+  if (options.sinceRunStart) {
+    where.push('datetime(created_at) >= datetime(?)');
+    params.push(options.sinceRunStart);
+  }
+
   return db
     .prepare(
       `SELECT *
        FROM agent_runs
-       WHERE user_query = ?
+       WHERE ${where.join(' AND ')}
        ORDER BY datetime(created_at) DESC, created_at DESC
        LIMIT 1`,
     )
-    .get(query);
+    .get(...params);
 }
 
 function getRunSteps(db, runId) {
@@ -183,8 +139,8 @@ function includesTerm(haystack, term) {
   return haystack.toLocaleLowerCase().includes(term.toLocaleLowerCase());
 }
 
-function evaluateCase(db, smokeCase) {
-  const run = getLatestRun(db, smokeCase.query);
+function evaluateCase(db, smokeCase, options) {
+  const run = getLatestRun(db, smokeCase.query, options);
   if (!run) {
     return {
       id: smokeCase.id,
@@ -198,6 +154,17 @@ function evaluateCase(db, smokeCase) {
   const assistantText = getAssistantText(db, run);
   const toolNames = steps.map((step) => step.tool_name).filter(Boolean);
   const failures = [];
+
+  const allowedStatuses = options.sinceRunStart
+    ? ['completed']
+    : ['completed', 'running'];
+  if (run.status && !allowedStatuses.includes(run.status)) {
+    failures.push(`run status=${run.status}`);
+  }
+
+  if (run.assistant_text_len === 0 || run.empty_assistant_count > 0) {
+    failures.push('assistant 输出为空或不可渲染');
+  }
 
   if (
     smokeCase.expectedIntent &&
@@ -281,6 +248,9 @@ function evaluateCase(db, smokeCase) {
 function printMarkdown(results, options) {
   console.log('# Natural Agent Trace Eval\n');
   console.log(`DB: \`${options.dbPath}\``);
+  if (options.sinceRunStart) {
+    console.log(`Since run start: \`${options.sinceRunStart}\``);
+  }
   console.log('');
   console.log('| # | 状态 | 用例 | intent | tools | 说明 |');
   console.log('|---|------|------|--------|-------|------|');
@@ -309,8 +279,17 @@ if (!existsSync(options.dbPath)) {
   process.exit(1);
 }
 
+const cases = await loadCases(options.casesPath);
+if (!Array.isArray(cases)) {
+  console.error('cases file must export an array or { cases: [...] }');
+  process.exit(1);
+}
+const selectedCases = options.caseIds.length
+  ? cases.filter((smokeCase) => options.caseIds.includes(smokeCase.id))
+  : cases;
+
 const db = new Database(options.dbPath, { readonly: true });
-const results = CASES.map((smokeCase) => evaluateCase(db, smokeCase));
+const results = selectedCases.map((smokeCase) => evaluateCase(db, smokeCase, options));
 db.close();
 
 if (options.json) {

@@ -38,3 +38,21 @@ npm run eval:natural-agent
 ```bash
 npm run eval:natural-agent -- --allow-missing
 ```
+
+## Active Smoke Run
+
+The smoke cases now live in `scripts/natural-agent-smoke-cases.mjs`.
+
+To actively generate fresh traces against a running local app, start the app first and run:
+
+```bash
+npm run smoke:natural-agent -- --base-url http://localhost:3000
+```
+
+Useful variants:
+
+```bash
+npm run smoke:natural-agent -- --case=1,2,5
+npm run eval:natural-agent -- --since-run-start=2026-05-24T00:00:00.000Z
+npm run trace:inspect -- --since=24h --format markdown
+```
