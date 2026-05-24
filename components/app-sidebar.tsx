@@ -16,6 +16,7 @@ import {
 import { SidebarHistory } from './sidebar-history';
 import { ThemeToggle } from './theme-toggle';
 import { NotificationBell } from './notification-bell';
+import { AccountMenu } from './account-menu';
 
 export function AppSidebar() {
   const router = useRouter();
@@ -67,6 +68,9 @@ export function AppSidebar() {
       {/* ── Footer: 主题切换 ── */}
       <SidebarFooter>
         <SidebarMenu>
+          <SidebarMenuItem>
+            <AccountMenu />
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton tooltip="Prompt 管理" asChild>
               <Link href="/admin/prompts">

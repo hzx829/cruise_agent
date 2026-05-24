@@ -11,6 +11,7 @@ import agentDb from './agent-db';
 
 export interface ChatRow {
   id: string;
+  owner_user_id: string | null;
   title: string;
   created_at: string;
   updated_at: string;
@@ -27,11 +28,15 @@ interface MessageRow {
 // ── Prepared Statements ───────────────────────────────────
 
 const stmtInsertChat = agentDb.prepare(
-  'INSERT INTO chats (id) VALUES (?)',
+  'INSERT INTO chats (id, owner_user_id) VALUES (?, ?)',
 );
 
 const stmtGetChat = agentDb.prepare(
   'SELECT * FROM chats WHERE id = ?',
+);
+
+const stmtClaimChat = agentDb.prepare(
+  'UPDATE chats SET owner_user_id = ? WHERE id = ? AND owner_user_id IS NULL',
 );
 
 const stmtGetMessages = agentDb.prepare(
@@ -51,16 +56,23 @@ const stmtTouchChat = agentDb.prepare(
 );
 
 const stmtDeleteChat = agentDb.prepare(
-  'DELETE FROM chats WHERE id = ?',
+  'DELETE FROM chats WHERE id = ? AND owner_user_id = ?',
 );
 
 const stmtListChatsFirst = agentDb.prepare(
-  'SELECT id, title, created_at, updated_at FROM chats ORDER BY updated_at DESC LIMIT ?',
+  `SELECT id, owner_user_id, title, created_at, updated_at
+   FROM chats
+   WHERE owner_user_id = ?
+   ORDER BY updated_at DESC LIMIT ?`,
 );
 
 const stmtListChatsBefore = agentDb.prepare(
-  `SELECT id, title, created_at, updated_at FROM chats
-   WHERE updated_at < (SELECT updated_at FROM chats WHERE id = ?)
+  `SELECT id, owner_user_id, title, created_at, updated_at
+   FROM chats
+   WHERE owner_user_id = ?
+     AND updated_at < (
+       SELECT updated_at FROM chats WHERE id = ? AND owner_user_id = ?
+     )
    ORDER BY updated_at DESC LIMIT ?`,
 );
 
@@ -82,15 +94,38 @@ const insertManyMessages = agentDb.transaction((msgs: Array<{
 
 // ── 公开 API ──────────────────────────────────────────────
 
-export function createChat(id?: string): string {
+export function createChat(ownerUserId: string, id?: string): string {
   const chatId = id ?? generateId();
-  stmtInsertChat.run(chatId);
+  stmtInsertChat.run(chatId, ownerUserId);
   return chatId;
 }
 
-export function loadChat(id: string): { title: string; messages: UIMessage[] } {
+export class ChatAccessError extends Error {
+  constructor(
+    message: string,
+    public code: 'not_found' | 'forbidden',
+  ) {
+    super(message);
+    this.name = 'ChatAccessError';
+  }
+}
+
+export function loadChat(
+  id: string,
+  ownerUserId?: string,
+): { title: string; messages: UIMessage[] } {
   const chat = stmtGetChat.get(id) as ChatRow | undefined;
-  if (!chat) throw new Error(`Chat not found: ${id}`);
+  if (!chat) throw new ChatAccessError(`Chat not found: ${id}`, 'not_found');
+
+  if (ownerUserId) {
+    if (chat.owner_user_id && chat.owner_user_id !== ownerUserId) {
+      throw new ChatAccessError(`Chat forbidden: ${id}`, 'forbidden');
+    }
+    if (!chat.owner_user_id) {
+      stmtClaimChat.run(ownerUserId, id);
+      chat.owner_user_id = ownerUserId;
+    }
+  }
 
   const rows = stmtGetMessages.all(id) as MessageRow[];
 
@@ -123,18 +158,26 @@ export function updateChatTitle(chatId: string, title: string): void {
   stmtUpdateTitle.run(title, chatId);
 }
 
-export function deleteChat(chatId: string): void {
-  stmtDeleteChat.run(chatId); // CASCADE 会自动删消息
+export function deleteChat(chatId: string, ownerUserId: string): void {
+  stmtDeleteChat.run(chatId, ownerUserId); // CASCADE 会自动删消息
 }
 
 export function getChatList(options?: {
+  ownerUserId?: string;
   limit?: number;
   endingBefore?: string;
 }): ChatRow[] {
   const limit = options?.limit ?? 20;
+  const ownerUserId = options?.ownerUserId;
+  if (!ownerUserId) return [];
 
   if (options?.endingBefore) {
-    return stmtListChatsBefore.all(options.endingBefore, limit) as ChatRow[];
+    return stmtListChatsBefore.all(
+      ownerUserId,
+      options.endingBefore,
+      ownerUserId,
+      limit,
+    ) as ChatRow[];
   }
-  return stmtListChatsFirst.all(limit) as ChatRow[];
+  return stmtListChatsFirst.all(ownerUserId, limit) as ChatRow[];
 }

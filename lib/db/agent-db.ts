@@ -25,11 +25,74 @@ agentDb.pragma('foreign_keys = ON');
 // ── 自动建表 ──────────────────────────────────────────────
 
 agentDb.exec(`
-  CREATE TABLE IF NOT EXISTS chats (
+  CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
-    title TEXT NOT NULL DEFAULT 'New Chat',
+    display_name TEXT,
+    avatar_url TEXT,
+    email TEXT UNIQUE,
+    phone TEXT UNIQUE,
+    role TEXT NOT NULL DEFAULT 'user',
+    status TEXT NOT NULL DEFAULT 'active',
+    is_anonymous INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS auth_identities (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    provider_user_id TEXT NOT NULL,
+    provider_union_id TEXT,
+    raw_profile_json TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(provider, provider_user_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_auth_identities_user_id
+    ON auth_identities(user_id);
+  CREATE INDEX IF NOT EXISTS idx_auth_identities_union_id
+    ON auth_identities(provider_union_id);
+
+  CREATE TABLE IF NOT EXISTS auth_sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    revoked_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id
+    ON auth_sessions(user_id);
+  CREATE INDEX IF NOT EXISTS idx_auth_sessions_token_hash
+    ON auth_sessions(token_hash);
+
+  CREATE TABLE IF NOT EXISTS auth_oauth_states (
+    state TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    next_path TEXT NOT NULL,
+    user_id TEXT,
+    expires_at TEXT NOT NULL,
+    used_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_auth_oauth_states_expires_at
+    ON auth_oauth_states(expires_at);
+
+  CREATE TABLE IF NOT EXISTS chats (
+    id TEXT PRIMARY KEY,
+    owner_user_id TEXT,
+    title TEXT NOT NULL DEFAULT 'New Chat',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE SET NULL
   );
 
   CREATE TABLE IF NOT EXISTS messages (
@@ -46,12 +109,14 @@ agentDb.exec(`
 
   CREATE TABLE IF NOT EXISTS notifications (
     id TEXT PRIMARY KEY,
+    owner_user_id TEXT,
     type TEXT NOT NULL,
     title TEXT NOT NULL,
     body TEXT,
     data_json TEXT,
     read INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
   CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read);
@@ -90,6 +155,7 @@ agentDb.exec(`
   CREATE TABLE IF NOT EXISTS agent_runs (
     id TEXT PRIMARY KEY,
     chat_id TEXT,
+    user_id TEXT,
     prompt_id TEXT,
     prompt_version INTEGER,
     prompt_hash TEXT,
@@ -113,7 +179,8 @@ agentDb.exec(`
     error_message TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-    FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE SET NULL
+    FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE SET NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
   );
 
   CREATE INDEX IF NOT EXISTS idx_agent_runs_chat_id ON agent_runs(chat_id);
@@ -153,14 +220,31 @@ function columnExists(tableName: string, columnName: string): boolean {
 }
 
 function ensureColumn(
-  tableName: 'agent_runs' | 'agent_steps',
+  tableName: 'chats' | 'notifications' | 'agent_runs' | 'agent_steps',
   columnName: string,
   definition: string,
 ): void {
   if (columnExists(tableName, columnName)) return;
-  agentDb.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+  try {
+    agentDb.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.toLowerCase().includes('duplicate column name')
+    ) {
+      return;
+    }
+    throw error;
+  }
 }
 
+ensureColumn('chats', 'owner_user_id', 'TEXT REFERENCES users(id) ON DELETE SET NULL');
+ensureColumn(
+  'notifications',
+  'owner_user_id',
+  'TEXT REFERENCES users(id) ON DELETE CASCADE',
+);
+ensureColumn('agent_runs', 'user_id', 'TEXT REFERENCES users(id) ON DELETE SET NULL');
 ensureColumn('agent_runs', 'prompt_version', 'INTEGER');
 ensureColumn('agent_runs', 'prompt_hash', 'TEXT');
 ensureColumn('agent_runs', 'status', "TEXT NOT NULL DEFAULT 'running'");
@@ -212,6 +296,9 @@ agentDb.exec(`
      OR success IS NULL;
 
   CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON agent_runs(status);
+  CREATE INDEX IF NOT EXISTS idx_agent_runs_user_id ON agent_runs(user_id);
+  CREATE INDEX IF NOT EXISTS idx_chats_owner_user_id ON chats(owner_user_id);
+  CREATE INDEX IF NOT EXISTS idx_notifications_owner_user_id ON notifications(owner_user_id);
   CREATE INDEX IF NOT EXISTS idx_agent_steps_tool_call_id ON agent_steps(tool_call_id);
 `);
 

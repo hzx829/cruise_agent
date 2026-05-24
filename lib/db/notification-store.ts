@@ -10,6 +10,7 @@ import agentDb from './agent-db';
 
 export interface NotificationRow {
   id: string;
+  owner_user_id: string | null;
   type: string;            // 'price_drop' | 'new_deal' | 'daily_digest'
   title: string;
   body: string | null;
@@ -19,6 +20,7 @@ export interface NotificationRow {
 }
 
 export interface CreateNotificationInput {
+  ownerUserId?: string | null;
   type: string;
   title: string;
   body?: string;
@@ -36,27 +38,41 @@ export interface NotificationConfigMap {
 // ── Prepared Statements ───────────────────────────────────
 
 const stmtInsert = agentDb.prepare(
-  'INSERT INTO notifications (id, type, title, body, data_json) VALUES (?, ?, ?, ?, ?)',
+  `INSERT INTO notifications
+     (id, owner_user_id, type, title, body, data_json)
+   VALUES (?, ?, ?, ?, ?, ?)`,
 );
 
 const stmtGetUnread = agentDb.prepare(
-  'SELECT * FROM notifications WHERE read = 0 ORDER BY created_at DESC LIMIT ?',
+  `SELECT *
+   FROM notifications
+   WHERE read = 0 AND (owner_user_id = ? OR owner_user_id IS NULL)
+   ORDER BY created_at DESC LIMIT ?`,
 );
 
 const stmtGetAll = agentDb.prepare(
-  'SELECT * FROM notifications ORDER BY created_at DESC LIMIT ?',
+  `SELECT *
+   FROM notifications
+   WHERE owner_user_id = ? OR owner_user_id IS NULL
+   ORDER BY created_at DESC LIMIT ?`,
 );
 
 const stmtMarkRead = agentDb.prepare(
-  'UPDATE notifications SET read = 1 WHERE id = ?',
+  `UPDATE notifications
+   SET read = 1
+   WHERE id = ? AND (owner_user_id = ? OR owner_user_id IS NULL)`,
 );
 
 const stmtMarkAllRead = agentDb.prepare(
-  'UPDATE notifications SET read = 1 WHERE read = 0',
+  `UPDATE notifications
+   SET read = 1
+   WHERE read = 0 AND (owner_user_id = ? OR owner_user_id IS NULL)`,
 );
 
 const stmtUnreadCount = agentDb.prepare(
-  'SELECT COUNT(*) as count FROM notifications WHERE read = 0',
+  `SELECT COUNT(*) as count
+   FROM notifications
+   WHERE read = 0 AND (owner_user_id = ? OR owner_user_id IS NULL)`,
 );
 
 const stmtGetConfig = agentDb.prepare(
@@ -73,6 +89,7 @@ export function createNotification(input: CreateNotificationInput): string {
   const id = generateId();
   stmtInsert.run(
     id,
+    input.ownerUserId ?? null,
     input.type,
     input.title,
     input.body ?? null,
@@ -81,25 +98,31 @@ export function createNotification(input: CreateNotificationInput): string {
   return id;
 }
 
-export function getUnreadNotifications(limit = 50): NotificationRow[] {
-  return stmtGetUnread.all(limit) as NotificationRow[];
+export function getUnreadNotifications(
+  ownerUserId: string,
+  limit = 50,
+): NotificationRow[] {
+  return stmtGetUnread.all(ownerUserId, limit) as NotificationRow[];
 }
 
-export function getAllNotifications(limit = 50): NotificationRow[] {
-  return stmtGetAll.all(limit) as NotificationRow[];
+export function getAllNotifications(
+  ownerUserId: string,
+  limit = 50,
+): NotificationRow[] {
+  return stmtGetAll.all(ownerUserId, limit) as NotificationRow[];
 }
 
-export function getUnreadCount(): number {
-  const row = stmtUnreadCount.get() as { count: number };
+export function getUnreadCount(ownerUserId: string): number {
+  const row = stmtUnreadCount.get(ownerUserId) as { count: number };
   return row.count;
 }
 
-export function markNotificationRead(id: string): void {
-  stmtMarkRead.run(id);
+export function markNotificationRead(id: string, ownerUserId: string): void {
+  stmtMarkRead.run(id, ownerUserId);
 }
 
-export function markAllNotificationsRead(): void {
-  stmtMarkAllRead.run();
+export function markAllNotificationsRead(ownerUserId: string): void {
+  stmtMarkAllRead.run(ownerUserId);
 }
 
 export function getNotificationConfig(): NotificationConfigMap {

@@ -26,6 +26,7 @@ import {
   saveAgentToolCall,
   updateAgentRun,
 } from '@/lib/db/agent-trace-store';
+import { applySessionCookie, ensureRequestUser } from '@/lib/auth/session';
 
 export const maxDuration = 60;
 
@@ -103,15 +104,16 @@ function toIsoTime(value: number): string {
 
 export async function POST(req: Request) {
   const { message, id }: { message: UIMessage; id: string } = await req.json();
+  const auth = ensureRequestUser(req);
 
   // 从 DB 加载历史消息；若 chat 不存在则首次创建
   let previousMessages: UIMessage[] = [];
   try {
-    const result = loadChat(id);
+    const result = loadChat(id, auth.user.id);
     previousMessages = result.messages;
   } catch {
     // 首条消息 — 延迟创建 chat 记录
-    createChat(id);
+    createChat(auth.user.id, id);
   }
   // 过滤掉 parts 为空的无效历史消息，避免 createAgentUIStreamResponse 报错
   const validPreviousMessages = previousMessages.filter(
@@ -134,6 +136,7 @@ export async function POST(req: Request) {
   const runStartedAt = Date.now();
   const runId = createAgentRun({
     chatId: id,
+    userId: auth.user.id,
     model: `${process.env.AI_PROVIDER || 'zhipu'}/${process.env.CHAT_MODEL || 'glm-4-flash'}`,
     userQuery: latestUserText,
     detectedIntent: intentContext?.intent,
@@ -289,5 +292,6 @@ export async function POST(req: Request) {
       }
     },
   });
+  applySessionCookie(response, auth);
   return response;
 }

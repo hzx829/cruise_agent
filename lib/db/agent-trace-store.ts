@@ -4,6 +4,7 @@ import agentDb from './agent-db';
 
 interface CreateAgentRunInput {
   chatId: string;
+  userId?: string | null;
   model: string;
   userQuery: string;
   detectedIntent?: string;
@@ -61,6 +62,7 @@ export interface AgentRunRow {
   prompt_hash: string | null;
   model: string | null;
   user_query: string | null;
+  user_id: string | null;
   detected_intent: string | null;
   status: string | null;
   started_at: string | null;
@@ -146,10 +148,10 @@ export interface ListAgentRunsInput {
 const stmtInsertAgentRun = agentDb.prepare(
   `INSERT INTO agent_runs
      (
-       id, chat_id, prompt_id, prompt_version, prompt_hash, model,
+       id, chat_id, user_id, prompt_id, prompt_version, prompt_hash, model,
        user_query, detected_intent, status, started_at
      )
-   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 );
 
 const stmtInsertAgentStep = agentDb.prepare(
@@ -324,6 +326,7 @@ export function createAgentRun(input: CreateAgentRunInput): string {
   stmtInsertAgentRun.run(
     runId,
     input.chatId,
+    input.userId ?? null,
     input.promptId ?? null,
     input.promptVersion ?? null,
     input.promptHash ?? null,
@@ -478,6 +481,7 @@ export function listAgentRuns(
   return rows.map((row) => ({
     id: row.id,
     chat_id: row.chat_id,
+    user_id: row.user_id,
     prompt_id: row.prompt_id,
     prompt_version: row.prompt_version,
     prompt_hash: row.prompt_hash,

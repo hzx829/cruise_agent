@@ -6,6 +6,7 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
 } from '@/lib/db/notification-store';
+import { applySessionCookie, ensureRequestUser } from '@/lib/auth/session';
 
 /**
  * GET /api/notifications
@@ -15,17 +16,20 @@ import {
  * - limit=50     限制条数
  */
 export async function GET(req: NextRequest) {
+  const auth = ensureRequestUser(req);
   const { searchParams } = req.nextUrl;
   const unreadOnly = searchParams.get('unread') === 'true';
   const limit = parseInt(searchParams.get('limit') || '50', 10);
 
   const notifications = unreadOnly
-    ? getUnreadNotifications(limit)
-    : getAllNotifications(limit);
+    ? getUnreadNotifications(auth.user.id, limit)
+    : getAllNotifications(auth.user.id, limit);
 
-  const unreadCount = getUnreadCount();
+  const unreadCount = getUnreadCount(auth.user.id);
 
-  return NextResponse.json({ notifications, unreadCount });
+  const response = NextResponse.json({ notifications, unreadCount });
+  applySessionCookie(response, auth);
+  return response;
 }
 
 /**
@@ -35,13 +39,16 @@ export async function GET(req: NextRequest) {
  * Body: { all: true }  — 全部标记已读
  */
 export async function PATCH(req: Request) {
+  const auth = ensureRequestUser(req);
   const body = await req.json();
 
   if (body.all) {
-    markAllNotificationsRead();
+    markAllNotificationsRead(auth.user.id);
   } else if (body.id) {
-    markNotificationRead(body.id);
+    markNotificationRead(body.id, auth.user.id);
   }
 
-  return NextResponse.json({ success: true });
+  const response = NextResponse.json({ success: true });
+  applySessionCookie(response, auth);
+  return response;
 }
