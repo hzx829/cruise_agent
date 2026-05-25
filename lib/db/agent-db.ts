@@ -210,6 +210,33 @@ agentDb.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_agent_steps_run_id ON agent_steps(run_id);
   CREATE INDEX IF NOT EXISTS idx_agent_steps_tool_name ON agent_steps(tool_name);
+
+  CREATE TABLE IF NOT EXISTS agent_step_timings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    step_number INTEGER NOT NULL,
+    model_provider TEXT,
+    model_id TEXT,
+    started_at TEXT,
+    ended_at TEXT,
+    duration_ms INTEGER,
+    model_duration_ms INTEGER,
+    tool_wall_time_ms INTEGER,
+    tool_duration_ms INTEGER,
+    tool_call_count INTEGER NOT NULL DEFAULT 0,
+    tool_result_count INTEGER NOT NULL DEFAULT 0,
+    prompt_tokens INTEGER,
+    completion_tokens INTEGER,
+    total_tokens INTEGER,
+    finish_reason TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(run_id, step_number),
+    FOREIGN KEY (run_id) REFERENCES agent_runs(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_agent_step_timings_run_id
+    ON agent_step_timings(run_id);
 `);
 
 function columnExists(tableName: string, columnName: string): boolean {
@@ -220,7 +247,12 @@ function columnExists(tableName: string, columnName: string): boolean {
 }
 
 function ensureColumn(
-  tableName: 'chats' | 'notifications' | 'agent_runs' | 'agent_steps',
+  tableName:
+    | 'chats'
+    | 'notifications'
+    | 'agent_runs'
+    | 'agent_steps'
+    | 'agent_step_timings',
   columnName: string,
   definition: string,
 ): void {
@@ -276,6 +308,22 @@ ensureColumn('agent_steps', 'effective_tool_input_json', 'TEXT');
 ensureColumn('agent_steps', 'tool_output_hash', 'TEXT');
 ensureColumn('agent_steps', 'updated_at', 'TEXT');
 
+ensureColumn('agent_step_timings', 'model_provider', 'TEXT');
+ensureColumn('agent_step_timings', 'model_id', 'TEXT');
+ensureColumn('agent_step_timings', 'started_at', 'TEXT');
+ensureColumn('agent_step_timings', 'ended_at', 'TEXT');
+ensureColumn('agent_step_timings', 'duration_ms', 'INTEGER');
+ensureColumn('agent_step_timings', 'model_duration_ms', 'INTEGER');
+ensureColumn('agent_step_timings', 'tool_wall_time_ms', 'INTEGER');
+ensureColumn('agent_step_timings', 'tool_duration_ms', 'INTEGER');
+ensureColumn('agent_step_timings', 'tool_call_count', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('agent_step_timings', 'tool_result_count', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('agent_step_timings', 'prompt_tokens', 'INTEGER');
+ensureColumn('agent_step_timings', 'completion_tokens', 'INTEGER');
+ensureColumn('agent_step_timings', 'total_tokens', 'INTEGER');
+ensureColumn('agent_step_timings', 'finish_reason', 'TEXT');
+ensureColumn('agent_step_timings', 'updated_at', 'TEXT');
+
 agentDb.exec(`
   UPDATE agent_runs
   SET started_at = COALESCE(started_at, created_at),
@@ -295,11 +343,25 @@ agentDb.exec(`
      OR effective_tool_input_json IS NULL
      OR success IS NULL;
 
+  UPDATE agent_step_timings
+  SET started_at = COALESCE(started_at, created_at),
+      ended_at = COALESCE(ended_at, created_at),
+      updated_at = COALESCE(updated_at, created_at),
+      tool_call_count = COALESCE(tool_call_count, 0),
+      tool_result_count = COALESCE(tool_result_count, 0)
+  WHERE started_at IS NULL
+     OR ended_at IS NULL
+     OR updated_at IS NULL
+     OR tool_call_count IS NULL
+     OR tool_result_count IS NULL;
+
   CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON agent_runs(status);
   CREATE INDEX IF NOT EXISTS idx_agent_runs_user_id ON agent_runs(user_id);
   CREATE INDEX IF NOT EXISTS idx_chats_owner_user_id ON chats(owner_user_id);
   CREATE INDEX IF NOT EXISTS idx_notifications_owner_user_id ON notifications(owner_user_id);
   CREATE INDEX IF NOT EXISTS idx_agent_steps_tool_call_id ON agent_steps(tool_call_id);
+  CREATE INDEX IF NOT EXISTS idx_agent_step_timings_run_id
+    ON agent_step_timings(run_id);
 `);
 
 export default agentDb;

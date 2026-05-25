@@ -5,6 +5,7 @@ import {
   type UIMessage,
 } from 'ai';
 import { createHash } from 'crypto';
+import { NextResponse } from 'next/server';
 import { createZhipu } from 'zhipu-ai-provider';
 import { createOpenAI } from '@ai-sdk/openai';
 import {
@@ -23,10 +24,11 @@ import { getActivePromptTemplate } from '@/lib/ai/prompt-store';
 import { loadChat, saveMessages, updateChatTitle, createChat } from '@/lib/db/chat-store';
 import {
   createAgentRun,
+  saveAgentStepTiming,
   saveAgentToolCall,
   updateAgentRun,
 } from '@/lib/db/agent-trace-store';
-import { applySessionCookie, ensureRequestUser } from '@/lib/auth/session';
+import { getAuthenticatedRequestUser } from '@/lib/auth/session';
 
 export const maxDuration = 60;
 
@@ -103,17 +105,28 @@ function toIsoTime(value: number): string {
 }
 
 export async function POST(req: Request) {
+  const user = getAuthenticatedRequestUser(req);
+  if (!user) {
+    return NextResponse.json(
+      {
+        error: 'Login required',
+        authRequired: true,
+        loginUrl: '/login?next=/chat',
+      },
+      { status: 401 },
+    );
+  }
+
   const { message, id }: { message: UIMessage; id: string } = await req.json();
-  const auth = ensureRequestUser(req);
 
   // 从 DB 加载历史消息；若 chat 不存在则首次创建
   let previousMessages: UIMessage[] = [];
   try {
-    const result = loadChat(id, auth.user.id);
+    const result = loadChat(id, user.id);
     previousMessages = result.messages;
   } catch {
     // 首条消息 — 延迟创建 chat 记录
-    createChat(auth.user.id, id);
+    createChat(user.id, id);
   }
   // 过滤掉 parts 为空的无效历史消息，避免 createAgentUIStreamResponse 报错
   const validPreviousMessages = previousMessages.filter(
@@ -136,7 +149,7 @@ export async function POST(req: Request) {
   const runStartedAt = Date.now();
   const runId = createAgentRun({
     chatId: id,
-    userId: auth.user.id,
+    userId: user.id,
     model: `${process.env.AI_PROVIDER || 'zhipu'}/${process.env.CHAT_MODEL || 'glm-4-flash'}`,
     userQuery: latestUserText,
     detectedIntent: intentContext?.intent,
@@ -149,22 +162,130 @@ export async function POST(req: Request) {
   let toolResultCount = 0;
   let savedErrorFallback = false;
   let totalUsage: LanguageModelUsage | undefined;
+  const stepStarts = new Map<number, number>();
+  const finishedStepNumbers = new Set<number>();
+  const stepToolDurationMs = new Map<number, number>();
+  const stepToolFirstStartedAt = new Map<number, number>();
+  const stepToolLastEndedAt = new Map<number, number>();
+  const stepToolCallCounts = new Map<number, number>();
+
+  function incrementStepValue(
+    map: Map<number, number>,
+    stepNumber: number,
+    amount: number,
+  ): void {
+    map.set(stepNumber, (map.get(stepNumber) ?? 0) + amount);
+  }
+
+  function rememberToolTiming(
+    stepNumber: number,
+    startedAtMs: number,
+    endedAtMs: number,
+    durationMs: number,
+  ): void {
+    incrementStepValue(stepToolDurationMs, stepNumber, durationMs);
+    incrementStepValue(stepToolCallCounts, stepNumber, 1);
+    stepToolFirstStartedAt.set(
+      stepNumber,
+      Math.min(stepToolFirstStartedAt.get(stepNumber) ?? startedAtMs, startedAtMs),
+    );
+    stepToolLastEndedAt.set(
+      stepNumber,
+      Math.max(stepToolLastEndedAt.get(stepNumber) ?? endedAtMs, endedAtMs),
+    );
+  }
+
+  function getToolWallTime(stepNumber: number): number | null {
+    const firstStartedAt = stepToolFirstStartedAt.get(stepNumber);
+    const lastEndedAt = stepToolLastEndedAt.get(stepNumber);
+    if (firstStartedAt == null || lastEndedAt == null) return null;
+    return Math.max(0, lastEndedAt - firstStartedAt);
+  }
+
+  function persistStepTiming(input: {
+    stepNumber: number;
+    endedAtMs: number;
+    modelProvider?: string | null;
+    modelId?: string | null;
+    usage?: LanguageModelUsage;
+    finishReason?: string | null;
+    toolResultCount?: number | null;
+  }): void {
+    if (finishedStepNumbers.has(input.stepNumber)) return;
+
+    const startedAtMs = stepStarts.get(input.stepNumber);
+    const durationMs =
+      startedAtMs == null
+        ? null
+        : Math.max(0, Math.round(input.endedAtMs - startedAtMs));
+    const toolWallTimeMs = getToolWallTime(input.stepNumber);
+    const toolDurationMs = stepToolDurationMs.get(input.stepNumber) ?? null;
+    const modelDurationMs =
+      durationMs == null
+        ? null
+        : Math.max(0, durationMs - (toolWallTimeMs ?? 0));
+    const usageTokens = getUsageTokens(input.usage);
+
+    saveAgentStepTiming({
+      runId,
+      stepNumber: input.stepNumber,
+      modelProvider: input.modelProvider,
+      modelId: input.modelId,
+      startedAt: startedAtMs == null ? null : toIsoTime(startedAtMs),
+      endedAt: toIsoTime(input.endedAtMs),
+      durationMs,
+      modelDurationMs,
+      toolWallTimeMs,
+      toolDurationMs,
+      toolCallCount: stepToolCallCounts.get(input.stepNumber) ?? 0,
+      toolResultCount: input.toolResultCount ?? 0,
+      finishReason: input.finishReason ?? null,
+      ...usageTokens,
+    });
+
+    finishedStepNumbers.add(input.stepNumber);
+  }
+
+  function flushOpenStepTimings(finishReason: string): void {
+    const endedAtMs = Date.now();
+    for (const stepNumber of stepStarts.keys()) {
+      try {
+        persistStepTiming({
+          stepNumber,
+          endedAtMs,
+          finishReason,
+        });
+      } catch (error) {
+        console.error('[agent-trace] failed to persist open step timing', error);
+      }
+    }
+  }
+
   const agent = createCruiseAgent(getModel(), {
     intentContext,
     promptTemplate: activePrompt.content,
+    onStepStart: (event) => {
+      stepStarts.set(event.stepNumber, Date.now());
+    },
     onToolCallFinish: async (event) => {
       const endedAtMs = Date.now();
-      const durationMs = Math.max(0, Math.round(event.durationMs));
+      const durationMs = Number.isFinite(event.durationMs)
+        ? Math.max(0, Math.round(event.durationMs))
+        : 0;
+      const startedAtMs = endedAtMs - durationMs;
+      const stepNumber = event.stepNumber ?? 0;
       const rawToolInput = event.toolCall.input;
       const effectiveToolInput =
         event.toolCall.toolName === 'searchDeals'
           ? applyHardConstraintsToSearchDealsInput(rawToolInput, intentContext)
           : rawToolInput;
 
+      rememberToolTiming(stepNumber, startedAtMs, endedAtMs, durationMs);
+
       try {
         saveAgentToolCall({
           runId,
-          stepNumber: event.stepNumber,
+          stepNumber,
           toolCallId: event.toolCall.toolCallId,
           toolName: event.toolCall.toolName,
           rawToolInput,
@@ -175,7 +296,7 @@ export async function POST(req: Request) {
           error: event.success
             ? undefined
             : (event as { error?: unknown }).error,
-          startedAt: toIsoTime(endedAtMs - durationMs),
+          startedAt: toIsoTime(startedAtMs),
           endedAt: toIsoTime(endedAtMs),
         });
       } catch (error) {
@@ -192,13 +313,34 @@ export async function POST(req: Request) {
     uiMessages: allMessages,
     generateMessageId,
     timeout: { totalMs: 55_000, stepMs: 35_000, chunkMs: 20_000 },
-    onStepFinish: async ({ toolResults }) => {
+    onStepFinish: async ({
+      stepNumber,
+      model,
+      toolResults,
+      usage,
+      finishReason,
+    }) => {
       if (toolResults?.length) {
         toolStepCount += 1;
         toolResultCount += toolResults.length;
       }
+
+      try {
+        persistStepTiming({
+          stepNumber,
+          endedAtMs: Date.now(),
+          modelProvider: model.provider,
+          modelId: model.modelId,
+          usage,
+          finishReason,
+          toolResultCount: toolResults?.length ?? 0,
+        });
+      } catch (error) {
+        console.error('[agent-trace] failed to persist step timing', error);
+      }
     },
     onError: (error) => {
+      flushOpenStepTimings('error');
       console.error('[agent-stream] failed', {
         runId,
         chatId: id,
@@ -292,6 +434,5 @@ export async function POST(req: Request) {
       }
     },
   });
-  applySessionCookie(response, auth);
   return response;
 }

@@ -55,6 +55,15 @@ Tool 级字段：
 - `tool_output_summary_json`
 - `tool_output_hash`
 
+Step timing fields:
+
+- `agent_step_timings` records every LLM step, including model-only final answer steps.
+- `duration_ms` is the full wall time from `experimental_onStepStart` to `onStepFinish`.
+- `tool_wall_time_ms` is the wall-clock envelope of tool execution inside the step.
+- `tool_duration_ms` is the sum of individual tool execution durations.
+- `model_duration_ms` is `duration_ms - tool_wall_time_ms`, i.e. model/provider/stream processing time.
+- run summary exposes `observed_duration_ms`, `model_duration_ms`, `tool_wall_time_ms`, `tool_duration_ms`, and `unattributed_duration_ms` so slow runs no longer hide behind fast tool calls.
+
 ## P1: Codex-Readable Inspect
 
 目标：Codex 可以快速读取近期 trace，不需要人工打开 UI。

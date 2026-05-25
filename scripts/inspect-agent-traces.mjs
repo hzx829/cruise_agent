@@ -78,6 +78,19 @@ function hasColumn(db, tableName, columnName) {
     .some((row) => row.name === columnName);
 }
 
+function hasTable(db, tableName) {
+  return Boolean(
+    db
+      .prepare(
+        `SELECT 1
+         FROM sqlite_master
+         WHERE type = 'table' AND name = ?
+         LIMIT 1`,
+      )
+      .get(tableName),
+  );
+}
+
 function selectColumn(db, tableName, columnName, fallback = 'NULL') {
   return hasColumn(db, tableName, columnName)
     ? columnName
@@ -97,6 +110,44 @@ function asRecord(value) {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value
     : {};
+}
+
+function sumNullable(values, select) {
+  let sum = 0;
+  let seen = false;
+  for (const value of values) {
+    const item = select(value);
+    if (item == null || !Number.isFinite(item)) continue;
+    sum += item;
+    seen = true;
+  }
+  return seen ? sum : null;
+}
+
+function summarizeTiming(runDurationMs, stepTimings, toolSteps) {
+  const stepDurationMs = sumNullable(stepTimings, (step) => step.durationMs);
+  const stepToolDurationMs = sumNullable(stepTimings, (step) => step.toolDurationMs);
+  const stepToolWallTimeMs = sumNullable(stepTimings, (step) => step.toolWallTimeMs);
+  const modelDurationMs = sumNullable(stepTimings, (step) => step.modelDurationMs);
+  const fallbackToolDurationMs = sumNullable(toolSteps, (step) => step.durationMs);
+  const toolDurationMs = stepToolDurationMs ?? fallbackToolDurationMs;
+  const toolWallTimeMs = stepToolWallTimeMs ?? fallbackToolDurationMs;
+  const observedDurationMs = stepDurationMs ?? toolDurationMs;
+  const unattributedDurationMs =
+    runDurationMs == null || observedDurationMs == null
+      ? null
+      : Math.max(0, runDurationMs - observedDurationMs);
+
+  return {
+    runDurationMs,
+    observedDurationMs,
+    stepDurationMs,
+    modelDurationMs,
+    toolWallTimeMs,
+    toolDurationMs,
+    unattributedDurationMs,
+    stepTimingCount: stepTimings.length,
+  };
 }
 
 function loadRuns(db, options) {
@@ -226,8 +277,65 @@ function loadRuns(db, options) {
     stepsByRun.set(step.runId, steps);
   }
 
+  const stepTimingRows = hasTable(db, 'agent_step_timings')
+    ? db
+        .prepare(
+          `SELECT
+             id,
+             run_id,
+             step_number,
+             ${selectColumn(db, 'agent_step_timings', 'model_provider')},
+             ${selectColumn(db, 'agent_step_timings', 'model_id')},
+             ${selectColumn(db, 'agent_step_timings', 'started_at')},
+             ${selectColumn(db, 'agent_step_timings', 'ended_at')},
+             ${selectColumn(db, 'agent_step_timings', 'duration_ms')},
+             ${selectColumn(db, 'agent_step_timings', 'model_duration_ms')},
+             ${selectColumn(db, 'agent_step_timings', 'tool_wall_time_ms')},
+             ${selectColumn(db, 'agent_step_timings', 'tool_duration_ms')},
+             ${selectColumn(db, 'agent_step_timings', 'tool_call_count')},
+             ${selectColumn(db, 'agent_step_timings', 'tool_result_count')},
+             ${selectColumn(db, 'agent_step_timings', 'prompt_tokens')},
+             ${selectColumn(db, 'agent_step_timings', 'completion_tokens')},
+             ${selectColumn(db, 'agent_step_timings', 'total_tokens')},
+             ${selectColumn(db, 'agent_step_timings', 'finish_reason')},
+             created_at
+           FROM agent_step_timings
+           WHERE run_id IN (${placeholders})
+           ORDER BY run_id, step_number ASC, id ASC`,
+        )
+        .all(...ids)
+        .map((step) => ({
+          id: step.id,
+          runId: step.run_id,
+          stepNumber: step.step_number,
+          modelProvider: step.model_provider,
+          modelId: step.model_id,
+          startedAt: step.started_at,
+          endedAt: step.ended_at,
+          durationMs: step.duration_ms,
+          modelDurationMs: step.model_duration_ms,
+          toolWallTimeMs: step.tool_wall_time_ms,
+          toolDurationMs: step.tool_duration_ms,
+          toolCallCount: step.tool_call_count,
+          toolResultCount: step.tool_result_count,
+          promptTokens: step.prompt_tokens,
+          completionTokens: step.completion_tokens,
+          totalTokens: step.total_tokens,
+          finishReason: step.finish_reason,
+          createdAt: step.created_at,
+        }))
+    : [];
+
+  const stepTimingsByRun = new Map();
+  for (const stepTiming of stepTimingRows) {
+    const stepTimings = stepTimingsByRun.get(stepTiming.runId) ?? [];
+    stepTimings.push(stepTiming);
+    stepTimingsByRun.set(stepTiming.runId, stepTimings);
+  }
+
   return rows.map((run) => {
     const steps = stepsByRun.get(run.id) ?? [];
+    const stepTimings = stepTimingsByRun.get(run.id) ?? [];
     return {
       id: run.id,
       chatId: run.chat_id,
@@ -255,6 +363,8 @@ function loadRuns(db, options) {
       createdAt: run.created_at,
       toolNames: [...new Set(steps.map((step) => step.toolName).filter(Boolean))],
       steps,
+      stepTimings,
+      timingSummary: summarizeTiming(run.duration_ms, stepTimings, steps),
     };
   });
 }
@@ -293,6 +403,12 @@ function getFlags(run, options) {
   }
 
   if ((run.durationMs ?? 0) >= options.slowRunMs) flags.push('slow_run');
+  if ((run.timingSummary?.modelDurationMs ?? 0) >= options.slowRunMs) {
+    flags.push('slow_model_stream');
+  }
+  if ((run.timingSummary?.unattributedDurationMs ?? 0) >= options.slowRunMs) {
+    flags.push('slow_unattributed');
+  }
   if ((run.assistantTextLen ?? 1) === 0 || (run.emptyAssistantCount ?? 0) > 0) {
     flags.push('empty_answer');
   }
@@ -348,6 +464,9 @@ function printMarkdown(runs, options) {
     console.log(`- intent/model: ${run.detectedIntent || '-'} / ${run.model || '-'}`);
     console.log(`- duration: ${formatDuration(run.durationMs)}, finish: ${run.finishReason || '-'}`);
     console.log(
+      `- timing: observed=${formatDuration(run.timingSummary.observedDurationMs)}, step=${formatDuration(run.timingSummary.stepDurationMs)}, model/stream=${formatDuration(run.timingSummary.modelDurationMs)}, tool_wall=${formatDuration(run.timingSummary.toolWallTimeMs)}, tool_sum=${formatDuration(run.timingSummary.toolDurationMs)}, unattributed=${formatDuration(run.timingSummary.unattributedDurationMs)}`,
+    );
+    console.log(
       `- tokens: total=${run.totalTokens ?? '-'}, input=${run.promptTokens ?? '-'}, output=${run.completionTokens ?? '-'}`,
     );
     console.log(
@@ -357,6 +476,26 @@ function printMarkdown(runs, options) {
     console.log(`- flags: ${run.flags.join(', ') || 'none'}`);
     if (run.errorMessage) console.log(`- error: ${run.errorType || 'Error'}: ${run.errorMessage}`);
     console.log('');
+
+    if (run.stepTimings.length > 0) {
+      console.log('### LLM Step Timeline');
+      console.log('');
+      for (const timing of run.stepTimings) {
+        const model =
+          timing.modelProvider && timing.modelId
+            ? `${timing.modelProvider}/${timing.modelId}`
+            : timing.modelId || '-';
+        console.log(
+          `- step ${timing.stepNumber}: total=${formatDuration(timing.durationMs)}, model/stream=${formatDuration(timing.modelDurationMs)}, tool_wall=${formatDuration(timing.toolWallTimeMs)}, tool_sum=${formatDuration(timing.toolDurationMs)}, tools=${timing.toolCallCount ?? 0}/${timing.toolResultCount ?? 0}, tokens=${timing.totalTokens ?? '-'} (${timing.promptTokens ?? '-'}/${timing.completionTokens ?? '-'}), finish=${timing.finishReason || '-'}, model=${model}`,
+        );
+      }
+      console.log('');
+    } else if (run.timingSummary.unattributedDurationMs != null) {
+      console.log(
+        `Step timing was not recorded for this run; unattributed time is ${formatDuration(run.timingSummary.unattributedDurationMs)}.`,
+      );
+      console.log('');
+    }
 
     for (const step of run.steps) {
       console.log(

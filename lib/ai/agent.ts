@@ -3,6 +3,7 @@ import {
   stepCountIs,
   type LanguageModel,
   type ToolLoopAgentOnFinishCallback,
+  type ToolLoopAgentOnStepStartCallback,
   type ToolLoopAgentOnToolCallFinishCallback,
 } from 'ai';
 import { buildSystemPrompt } from './prompts';
@@ -105,6 +106,7 @@ interface CreateCruiseAgentOptions {
   intentContext?: CruiseIntentContext;
   promptTemplate?: string;
   onFinish?: ToolLoopAgentOnFinishCallback<typeof cruiseTools>;
+  onStepStart?: ToolLoopAgentOnStepStartCallback<typeof cruiseTools>;
   onToolCallFinish?: ToolLoopAgentOnToolCallFinishCallback<typeof cruiseTools>;
 }
 
@@ -336,6 +338,7 @@ export function createCruiseAgent(
         activeTools: chooseActiveTools(options.intentContext, steps),
       };
     },
+    experimental_onStepStart: options.onStepStart,
     experimental_onToolCallFinish: options.onToolCallFinish,
     // 允许最多 8 步：典型场景是 DB查询(1-2步) + 搜索(1步) + 综合回答(1步)
     stopWhen: stepCountIs(8),

@@ -37,6 +37,25 @@ interface SaveAgentToolCallInput {
   endedAt?: string | null;
 }
 
+interface SaveAgentStepTimingInput {
+  runId: string;
+  stepNumber: number;
+  modelProvider?: string | null;
+  modelId?: string | null;
+  startedAt?: string | null;
+  endedAt?: string | null;
+  durationMs?: number | null;
+  modelDurationMs?: number | null;
+  toolWallTimeMs?: number | null;
+  toolDurationMs?: number | null;
+  toolCallCount?: number | null;
+  toolResultCount?: number | null;
+  promptTokens?: number | null;
+  completionTokens?: number | null;
+  totalTokens?: number | null;
+  finishReason?: string | null;
+}
+
 export interface UpdateAgentRunInput {
   runId: string;
   status: 'running' | 'completed' | 'error' | 'aborted';
@@ -109,6 +128,28 @@ interface AgentStepRow {
   updated_at: string | null;
 }
 
+interface AgentStepTimingRow {
+  id: number;
+  run_id: string;
+  step_number: number;
+  model_provider: string | null;
+  model_id: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  duration_ms: number | null;
+  model_duration_ms: number | null;
+  tool_wall_time_ms: number | null;
+  tool_duration_ms: number | null;
+  tool_call_count: number | null;
+  tool_result_count: number | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  total_tokens: number | null;
+  finish_reason: string | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
 export interface AgentTraceStep {
   id: number;
   runId: string;
@@ -130,10 +171,45 @@ export interface AgentTraceStep {
   updatedAt: string | null;
 }
 
+export interface AgentStepTiming {
+  id: number;
+  runId: string;
+  stepNumber: number;
+  modelProvider: string | null;
+  modelId: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  durationMs: number | null;
+  modelDurationMs: number | null;
+  toolWallTimeMs: number | null;
+  toolDurationMs: number | null;
+  toolCallCount: number | null;
+  toolResultCount: number | null;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
+  finishReason: string | null;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+export interface AgentTimingSummary {
+  runDurationMs: number | null;
+  observedDurationMs: number | null;
+  stepDurationMs: number | null;
+  modelDurationMs: number | null;
+  toolWallTimeMs: number | null;
+  toolDurationMs: number | null;
+  unattributedDurationMs: number | null;
+  stepTimingCount: number;
+}
+
 export interface AgentRunWithSteps extends AgentRunRow {
   stepCount: number;
   toolNames: string[];
   steps: AgentTraceStep[];
+  stepTimings: AgentStepTiming[];
+  timingSummary: AgentTimingSummary;
 }
 
 export interface ListAgentRunsInput {
@@ -163,6 +239,33 @@ const stmtInsertAgentStep = agentDb.prepare(
        tool_output_hash
      )
    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+);
+
+const stmtUpsertAgentStepTiming = agentDb.prepare(
+  `INSERT INTO agent_step_timings
+     (
+       run_id, step_number, model_provider, model_id, started_at, ended_at,
+       duration_ms, model_duration_ms, tool_wall_time_ms, tool_duration_ms,
+       tool_call_count, tool_result_count, prompt_tokens, completion_tokens,
+       total_tokens, finish_reason
+     )
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+   ON CONFLICT(run_id, step_number) DO UPDATE SET
+       model_provider = excluded.model_provider,
+       model_id = excluded.model_id,
+       started_at = excluded.started_at,
+       ended_at = excluded.ended_at,
+       duration_ms = excluded.duration_ms,
+       model_duration_ms = excluded.model_duration_ms,
+       tool_wall_time_ms = excluded.tool_wall_time_ms,
+       tool_duration_ms = excluded.tool_duration_ms,
+       tool_call_count = excluded.tool_call_count,
+       tool_result_count = excluded.tool_result_count,
+       prompt_tokens = excluded.prompt_tokens,
+       completion_tokens = excluded.completion_tokens,
+       total_tokens = excluded.total_tokens,
+       finish_reason = excluded.finish_reason,
+       updated_at = datetime('now')`,
 );
 
 const stmtUpdateAgentRun = agentDb.prepare(
@@ -321,6 +424,75 @@ function mapStep(row: AgentStepRow): AgentTraceStep {
   };
 }
 
+function mapStepTiming(row: AgentStepTimingRow): AgentStepTiming {
+  return {
+    id: row.id,
+    runId: row.run_id,
+    stepNumber: row.step_number,
+    modelProvider: row.model_provider,
+    modelId: row.model_id,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    durationMs: row.duration_ms,
+    modelDurationMs: row.model_duration_ms,
+    toolWallTimeMs: row.tool_wall_time_ms,
+    toolDurationMs: row.tool_duration_ms,
+    toolCallCount: row.tool_call_count,
+    toolResultCount: row.tool_result_count,
+    promptTokens: row.prompt_tokens,
+    completionTokens: row.completion_tokens,
+    totalTokens: row.total_tokens,
+    finishReason: row.finish_reason,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function sumNullable<T>(
+  values: T[],
+  select: (value: T) => number | null,
+): number | null {
+  let sum = 0;
+  let seen = false;
+  for (const value of values) {
+    const item = select(value);
+    if (item == null || !Number.isFinite(item)) continue;
+    sum += item;
+    seen = true;
+  }
+  return seen ? sum : null;
+}
+
+function summarizeTiming(
+  runDurationMs: number | null,
+  stepTimings: AgentStepTiming[],
+  toolSteps: AgentTraceStep[],
+): AgentTimingSummary {
+  const stepDurationMs = sumNullable(stepTimings, (step) => step.durationMs);
+  const stepToolDurationMs = sumNullable(stepTimings, (step) => step.toolDurationMs);
+  const stepToolWallTimeMs = sumNullable(stepTimings, (step) => step.toolWallTimeMs);
+  const modelDurationMs = sumNullable(stepTimings, (step) => step.modelDurationMs);
+  const fallbackToolDurationMs = sumNullable(toolSteps, (step) => step.durationMs);
+  const toolDurationMs = stepToolDurationMs ?? fallbackToolDurationMs;
+  const toolWallTimeMs = stepToolWallTimeMs ?? fallbackToolDurationMs;
+  const observedDurationMs = stepDurationMs ?? toolDurationMs;
+  const unattributedDurationMs =
+    runDurationMs == null || observedDurationMs == null
+      ? null
+      : Math.max(0, runDurationMs - observedDurationMs);
+
+  return {
+    runDurationMs,
+    observedDurationMs,
+    stepDurationMs,
+    modelDurationMs,
+    toolWallTimeMs,
+    toolDurationMs,
+    unattributedDurationMs,
+    stepTimingCount: stepTimings.length,
+  };
+}
+
 export function createAgentRun(input: CreateAgentRunInput): string {
   const runId = generateId();
   stmtInsertAgentRun.run(
@@ -372,6 +544,27 @@ export function saveAgentToolCall(input: SaveAgentToolCallInput): void {
     compactJson(input.effectiveToolInput),
     compactJson(outputSummary),
     hashJson(input.toolOutput),
+  );
+}
+
+export function saveAgentStepTiming(input: SaveAgentStepTimingInput): void {
+  stmtUpsertAgentStepTiming.run(
+    input.runId,
+    input.stepNumber,
+    input.modelProvider ?? null,
+    input.modelId ?? null,
+    input.startedAt ?? null,
+    input.endedAt ?? null,
+    input.durationMs ?? null,
+    input.modelDurationMs ?? null,
+    input.toolWallTimeMs ?? null,
+    input.toolDurationMs ?? null,
+    input.toolCallCount ?? 0,
+    input.toolResultCount ?? 0,
+    input.promptTokens ?? null,
+    input.completionTokens ?? null,
+    input.totalTokens ?? null,
+    input.finishReason ?? null,
   );
 }
 
@@ -478,37 +671,60 @@ export function listAgentRuns(
     stepsByRun.set(row.run_id, steps);
   }
 
-  return rows.map((row) => ({
-    id: row.id,
-    chat_id: row.chat_id,
-    user_id: row.user_id,
-    prompt_id: row.prompt_id,
-    prompt_version: row.prompt_version,
-    prompt_hash: row.prompt_hash,
-    model: row.model,
-    user_query: row.user_query,
-    detected_intent: row.detected_intent,
-    status: row.status,
-    started_at: row.started_at,
-    ended_at: row.ended_at,
-    duration_ms: row.duration_ms,
-    finish_reason: row.finish_reason,
-    is_aborted: row.is_aborted,
-    assistant_text_len: row.assistant_text_len,
-    empty_assistant_count: row.empty_assistant_count,
-    tool_step_count: row.tool_step_count,
-    tool_result_count: row.tool_result_count,
-    prompt_tokens: row.prompt_tokens,
-    completion_tokens: row.completion_tokens,
-    total_tokens: row.total_tokens,
-    error_type: row.error_type,
-    error_message: row.error_message,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-    stepCount: row.step_count,
-    toolNames: row.tool_names
-      ? row.tool_names.split(',').filter(Boolean)
-      : [],
-    steps: stepsByRun.get(row.id) ?? [],
-  }));
+  const stepTimingRows = agentDb
+    .prepare(
+      `SELECT *
+       FROM agent_step_timings
+       WHERE run_id IN (${placeholders})
+       ORDER BY run_id, step_number ASC, id ASC`,
+    )
+    .all(...runIds) as AgentStepTimingRow[];
+
+  const stepTimingsByRun = new Map<string, AgentStepTiming[]>();
+  for (const row of stepTimingRows) {
+    const stepTimings = stepTimingsByRun.get(row.run_id) ?? [];
+    stepTimings.push(mapStepTiming(row));
+    stepTimingsByRun.set(row.run_id, stepTimings);
+  }
+
+  return rows.map((row) => {
+    const steps = stepsByRun.get(row.id) ?? [];
+    const stepTimings = stepTimingsByRun.get(row.id) ?? [];
+
+    return {
+      id: row.id,
+      chat_id: row.chat_id,
+      user_id: row.user_id,
+      prompt_id: row.prompt_id,
+      prompt_version: row.prompt_version,
+      prompt_hash: row.prompt_hash,
+      model: row.model,
+      user_query: row.user_query,
+      detected_intent: row.detected_intent,
+      status: row.status,
+      started_at: row.started_at,
+      ended_at: row.ended_at,
+      duration_ms: row.duration_ms,
+      finish_reason: row.finish_reason,
+      is_aborted: row.is_aborted,
+      assistant_text_len: row.assistant_text_len,
+      empty_assistant_count: row.empty_assistant_count,
+      tool_step_count: row.tool_step_count,
+      tool_result_count: row.tool_result_count,
+      prompt_tokens: row.prompt_tokens,
+      completion_tokens: row.completion_tokens,
+      total_tokens: row.total_tokens,
+      error_type: row.error_type,
+      error_message: row.error_message,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      stepCount: row.step_count,
+      toolNames: row.tool_names
+        ? row.tool_names.split(',').filter(Boolean)
+        : [],
+      steps,
+      stepTimings,
+      timingSummary: summarizeTiming(row.duration_ms, stepTimings, steps),
+    };
+  });
 }

@@ -33,6 +33,39 @@ interface AgentTraceStep {
   updatedAt: string | null;
 }
 
+interface AgentStepTiming {
+  id: number;
+  runId: string;
+  stepNumber: number;
+  modelProvider: string | null;
+  modelId: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  durationMs: number | null;
+  modelDurationMs: number | null;
+  toolWallTimeMs: number | null;
+  toolDurationMs: number | null;
+  toolCallCount: number | null;
+  toolResultCount: number | null;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
+  finishReason: string | null;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+interface AgentTimingSummary {
+  runDurationMs: number | null;
+  observedDurationMs: number | null;
+  stepDurationMs: number | null;
+  modelDurationMs: number | null;
+  toolWallTimeMs: number | null;
+  toolDurationMs: number | null;
+  unattributedDurationMs: number | null;
+  stepTimingCount: number;
+}
+
 interface AgentRunWithSteps {
   id: string;
   chat_id: string | null;
@@ -62,6 +95,8 @@ interface AgentRunWithSteps {
   stepCount: number;
   toolNames: string[];
   steps: AgentTraceStep[];
+  stepTimings: AgentStepTiming[];
+  timingSummary: AgentTimingSummary;
 }
 
 interface TraceListResponse {
@@ -114,6 +149,8 @@ function stringify(value: unknown): string {
 function formatDuration(value: number | null): string {
   if (value == null) return '-';
   if (value >= 60_000) return `${(value / 60_000).toFixed(1)}min`;
+  if (value >= 10_000) return `${(value / 1000).toFixed(1)}s`;
+  if (value >= 1_000) return `${(value / 1000).toFixed(2)}s`;
   return `${value}ms`;
 }
 
@@ -464,7 +501,10 @@ function TraceDetails({ run }: { run: AgentRunWithSteps }) {
           </p>
         )}
         <p className="mt-3 text-base font-medium">{run.user_query || '(empty query)'}</p>
+        <TimingBreakdown summary={run.timingSummary} />
       </div>
+
+      <StepTimingTimeline timings={run.stepTimings} />
 
       {run.steps.length === 0 ? (
         <p className="p-4 text-sm text-muted-foreground">这条 run 没有工具调用。</p>
@@ -501,6 +541,105 @@ function TraceDetails({ run }: { run: AgentRunWithSteps }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function TimingBreakdown({ summary }: { summary: AgentTimingSummary }) {
+  const items = [
+    ['run total', summary.runDurationMs],
+    [
+      summary.stepTimingCount > 0 ? 'step total' : 'observed',
+      summary.observedDurationMs,
+    ],
+    ['model/stream', summary.modelDurationMs],
+    ['tool wall', summary.toolWallTimeMs],
+    ['tool sum', summary.toolDurationMs],
+    ['unattributed', summary.unattributedDurationMs],
+  ] as const;
+
+  return (
+    <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
+      {items.map(([label, value]) => (
+        <div key={label} className="min-w-0 border-l pl-3">
+          <p className="text-xs uppercase text-muted-foreground">{label}</p>
+          <p className="truncate text-sm font-medium">{formatDuration(value)}</p>
+        </div>
+      ))}
+      <div className="min-w-0 border-l pl-3">
+        <p className="text-xs uppercase text-muted-foreground">step records</p>
+        <p className="truncate text-sm font-medium">{summary.stepTimingCount}</p>
+      </div>
+    </div>
+  );
+}
+
+function StepTimingTimeline({ timings }: { timings: AgentStepTiming[] }) {
+  if (timings.length === 0) {
+    return (
+      <div className="border-b px-4 py-3 text-sm text-muted-foreground md:px-6">
+        No LLM step timing recorded for this run. Older traces only expose tool
+        duration and the remaining time as unattributed.
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-b px-4 py-4 md:px-6">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold">LLM Step Timeline</h2>
+        <span className="text-xs text-muted-foreground">
+          {timings.length} steps
+        </span>
+      </div>
+      <div className="space-y-3">
+        {timings.map((timing) => {
+          const model =
+            timing.modelProvider && timing.modelId
+              ? `${timing.modelProvider}/${timing.modelId}`
+              : timing.modelId || '-';
+
+          return (
+            <div key={timing.id} className="border-l pl-3">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <span className="rounded-sm bg-muted px-2 py-1 text-xs font-medium">
+                  Step {timing.stepNumber}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {formatTime(timing.startedAt)} - {formatTime(timing.endedAt)}
+                </span>
+              </div>
+              <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-7">
+                <Meta label="total" value={formatDuration(timing.durationMs)} />
+                <Meta
+                  label="model/stream"
+                  value={formatDuration(timing.modelDurationMs)}
+                />
+                <Meta
+                  label="tool wall"
+                  value={formatDuration(timing.toolWallTimeMs)}
+                />
+                <Meta
+                  label="tool sum"
+                  value={formatDuration(timing.toolDurationMs)}
+                />
+                <Meta
+                  label="tools"
+                  value={`${timing.toolCallCount ?? 0}/${timing.toolResultCount ?? 0}`}
+                />
+                <Meta
+                  label="tokens"
+                  value={`${timing.totalTokens ?? '-'} (${timing.promptTokens ?? '-'}/${timing.completionTokens ?? '-'})`}
+                />
+                <Meta
+                  label="finish"
+                  value={`${timing.finishReason || '-'} @ ${model}`}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
