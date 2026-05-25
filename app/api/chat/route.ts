@@ -30,7 +30,13 @@ import {
 } from '@/lib/db/agent-trace-store';
 import { getAuthenticatedRequestUser } from '@/lib/auth/session';
 
-export const maxDuration = 60;
+export const maxDuration = 120;
+
+const AGENT_STREAM_TIMEOUT = {
+  totalMs: 110_000,
+  stepMs: 45_000,
+  chunkMs: 25_000,
+} as const;
 
 function getModel() {
   const provider = process.env.AI_PROVIDER || 'zhipu';
@@ -312,7 +318,7 @@ export async function POST(req: Request) {
     agent,
     uiMessages: allMessages,
     generateMessageId,
-    timeout: { totalMs: 55_000, stepMs: 35_000, chunkMs: 20_000 },
+    timeout: AGENT_STREAM_TIMEOUT,
     onStepFinish: async ({
       stepNumber,
       model,
@@ -386,7 +392,10 @@ export async function POST(req: Request) {
         ? ABORTED_ASSISTANT_FALLBACK_TEXT
         : undefined;
       const messagesToSave = newMessages.map((msg) =>
-        ensureRenderableAssistantMessage(msg, fallbackText),
+        ensureRenderableAssistantMessage(msg, fallbackText, {
+          appendFallbackText: isAborted,
+          dropIncompleteToolParts: isAborted,
+        }),
       );
       const emptyAssistantCount = newMessages.filter(
         (msg) => msg.role === 'assistant' && !hasRenderableContent(msg),

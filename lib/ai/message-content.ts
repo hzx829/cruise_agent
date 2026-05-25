@@ -29,9 +29,25 @@ const RENDERABLE_TOOL_PART_TYPES = new Set<string>([
   'tool-cruiseEncyclopedia',
 ]);
 
+const INCOMPLETE_TOOL_STATES = new Set<string>([
+  'input-streaming',
+  'input-available',
+]);
+
+const STREAMING_PART_STATES = new Set<string>(['streaming']);
+
+interface EnsureRenderableAssistantMessageOptions {
+  appendFallbackText?: boolean;
+  dropIncompleteToolParts?: boolean;
+}
+
 function getPartState(part: MessagePart): string | undefined {
   if (!('state' in part)) return undefined;
   return typeof part.state === 'string' ? part.state : undefined;
+}
+
+function setPartState(part: MessagePart, state: string): MessagePart {
+  return { ...part, state } as MessagePart;
 }
 
 function isRenderableToolPart(part: MessagePart): boolean {
@@ -39,6 +55,28 @@ function isRenderableToolPart(part: MessagePart): boolean {
 
   const state = getPartState(part);
   return state === 'output-available' || state === 'output-error';
+}
+
+function isIncompleteToolPart(part: MessagePart): boolean {
+  if (!RENDERABLE_TOOL_PART_TYPES.has(part.type)) return false;
+  const state = getPartState(part);
+  return Boolean(state && INCOMPLETE_TOOL_STATES.has(state));
+}
+
+function normalizeFinishedPart(
+  part: MessagePart,
+  options: EnsureRenderableAssistantMessageOptions,
+): MessagePart | null {
+  if (isIncompleteToolPart(part) && options.dropIncompleteToolParts) {
+    return null;
+  }
+
+  const state = getPartState(part);
+  if (state && STREAMING_PART_STATES.has(state)) {
+    return setPartState(part, 'done');
+  }
+
+  return part;
 }
 
 export function hasAssistantTextContent(message: UIMessage): boolean {
@@ -68,9 +106,39 @@ export function createFallbackAssistantMessage(
 export function ensureRenderableAssistantMessage(
   message: UIMessage,
   fallbackText = EMPTY_ASSISTANT_FALLBACK_TEXT,
+  options: EnsureRenderableAssistantMessageOptions = {},
 ): UIMessage {
-  if (message.role !== 'assistant' || hasRenderableContent(message)) {
+  if (message.role !== 'assistant') {
     return message;
+  }
+
+  const normalizedParts = message.parts
+    .map((part) => normalizeFinishedPart(part, options))
+    .filter((part): part is MessagePart => Boolean(part));
+
+  const normalizedMessage: UIMessage = {
+    ...message,
+    parts: normalizedParts,
+  };
+
+  if (hasRenderableContent(normalizedMessage)) {
+    if (
+      !options.appendFallbackText ||
+      hasAssistantTextContent(normalizedMessage) &&
+        normalizedMessage.parts.some(
+          (part) => part.type === 'text' && part.text.includes(fallbackText),
+        )
+    ) {
+      return normalizedMessage;
+    }
+
+    return {
+      ...normalizedMessage,
+      parts: [
+        ...normalizedMessage.parts,
+        { type: 'text', text: fallbackText, state: 'done' } as MessagePart,
+      ],
+    };
   }
 
   return {

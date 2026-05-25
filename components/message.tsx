@@ -9,7 +9,11 @@ import { CompareTable } from './compare-table';
 import { CopywritingCard } from './copywriting-card';
 import { Ship, Loader2, TrendingDown, BarChart3, CheckCircle2, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { EMPTY_ASSISTANT_FALLBACK_TEXT, hasRenderableContent } from '@/lib/ai/message-content';
+import {
+  ABORTED_ASSISTANT_FALLBACK_TEXT,
+  EMPTY_ASSISTANT_FALLBACK_TEXT,
+  hasRenderableContent,
+} from '@/lib/ai/message-content';
 
 type MessagePart = UIMessage['parts'][number];
 
@@ -171,6 +175,21 @@ export function Message({
                 part.state === 'input-streaming' ||
                 part.state === 'input-available'
               ) {
+                if (!isLoading) {
+                  return (
+                    <div
+                      key={key}
+                      className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
+                    >
+                      <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+                      <span>
+                        {getToolLabel(toolName)}
+                        {ABORTED_ASSISTANT_FALLBACK_TEXT}
+                      </span>
+                    </div>
+                  );
+                }
+
                 return (
                   <div
                     key={key}
