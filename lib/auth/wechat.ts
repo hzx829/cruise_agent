@@ -133,6 +133,16 @@ export function isWeChatConfigured(): boolean {
   return Boolean(process.env.WECHAT_APP_ID && process.env.WECHAT_APP_SECRET);
 }
 
+export function getWeChatQrLoginConfig(req: Request, state: string) {
+  const { appId } = requireWeChatConfig();
+  return {
+    appId,
+    scope: 'snsapi_login',
+    redirectUri: getRedirectUri(req),
+    state,
+  };
+}
+
 export function buildWeChatAuthorizeUrl(req: Request, state: string): string {
   const { appId } = requireWeChatConfig();
   const url = new URL('https://open.weixin.qq.com/connect/qrconnect');

@@ -9,8 +9,13 @@ import { zhCN } from 'date-fns/locale';
 import * as Popover from '@radix-ui/react-popover';
 import type { NotificationRow } from '@/lib/db/notification-store';
 import { SidebarMenuButton } from '@/components/ui/sidebar';
+import {
+  fetchJsonWithAuthRedirect,
+  fetchWithAuthRedirect,
+} from '@/lib/auth/client';
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+const fetcher = (url: string) =>
+  fetchJsonWithAuthRedirect<NotificationData>(url);
 const WELCOME_NOTICE_STORAGE_KEY = 'cruiseswift_welcome_notice_seen_v1';
 const WELCOME_NOTICE = `⚓️ 欢迎来到游速达 CruiseSwift！
 嘿！我是你的 24h 邮轮营销外挂。在这里，我们联手拒绝 AI 的“价格幻觉”，只抓实打实的官网降价干货！
@@ -61,7 +66,7 @@ export function NotificationBell() {
 
   const handleClickNotification = async (notification: NotificationRow) => {
     // 标记已读
-    await fetch('/api/notifications', {
+    await fetchWithAuthRedirect('/api/notifications', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: notification.id }),
@@ -75,7 +80,7 @@ export function NotificationBell() {
   };
 
   const handleMarkAllRead = async () => {
-    await fetch('/api/notifications', {
+    await fetchWithAuthRedirect('/api/notifications', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ all: true }),

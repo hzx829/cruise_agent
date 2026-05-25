@@ -200,10 +200,22 @@ export function getRequestUser(req: Request): AuthUser | null {
   return getUserBySessionToken(getSessionTokenFromRequest(req));
 }
 
+export function getAuthenticatedRequestUser(req: Request): AuthUser | null {
+  const user = getRequestUser(req);
+  return user && !user.isAnonymous ? user : null;
+}
+
 export function getCookieStoreUser(cookieStore: {
   get(name: string): { value: string } | undefined;
 }): AuthUser | null {
   return getUserBySessionToken(cookieStore.get(AUTH_COOKIE_NAME)?.value ?? null);
+}
+
+export function getAuthenticatedCookieStoreUser(cookieStore: {
+  get(name: string): { value: string } | undefined;
+}): AuthUser | null {
+  const user = getCookieStoreUser(cookieStore);
+  return user && !user.isAnonymous ? user : null;
 }
 
 export function createAnonymousUser(): AuthUser {

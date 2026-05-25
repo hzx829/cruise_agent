@@ -21,6 +21,7 @@ import { unstable_serialize } from 'swr/infinite';
 import { Message } from './message';
 import { ChatHeader } from './chat-header';
 import { getChatHistoryPaginationKey } from './sidebar-history';
+import { fetchWithAuthRedirect } from '@/lib/auth/client';
 
 const QUICK_ACTIONS = [
   {
@@ -74,6 +75,7 @@ export function Chat({ id, initialMessages }: ChatProps) {
     messages: initialMessages,
     transport: new DefaultChatTransport({
       api: '/api/chat',
+      fetch: fetchWithAuthRedirect,
       prepareSendMessagesRequest({ messages }) {
         return {
           body: {

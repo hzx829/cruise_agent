@@ -6,6 +6,7 @@ import useSWR from 'swr';
 import * as Popover from '@radix-ui/react-popover';
 import { LogIn, LogOut, UserCircle } from 'lucide-react';
 import { SidebarMenuButton } from '@/components/ui/sidebar';
+import { fetchWithAuthRedirect, getLoginUrl } from '@/lib/auth/client';
 
 interface AuthMe {
   authenticated: boolean;
@@ -15,14 +16,14 @@ interface AuthMe {
     avatarUrl: string | null;
     role: string;
     isAnonymous: boolean;
-  };
+  } | null;
 }
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 function getLoginHref(pathname: string | null): string {
   const nextPath = pathname && pathname.startsWith('/') ? pathname : '/chat';
-  return `/login?next=${encodeURIComponent(nextPath)}`;
+  return getLoginUrl(nextPath);
 }
 
 export function AccountMenu() {
@@ -33,9 +34,9 @@ export function AccountMenu() {
   });
 
   const handleLogout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
+    await fetchWithAuthRedirect('/api/auth/logout', { method: 'POST' });
     await mutate();
-    router.push('/chat');
+    router.push(getLoginUrl('/chat'));
     router.refresh();
   };
 
@@ -59,13 +60,13 @@ export function AccountMenu() {
     );
   }
 
-  const displayName = data.user.displayName || '微信用户';
+  const displayName = data.user?.displayName || '微信用户';
 
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
         <SidebarMenuButton tooltip={displayName}>
-          {data.user.avatarUrl ? (
+          {data.user?.avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={data.user.avatarUrl}
@@ -86,7 +87,7 @@ export function AccountMenu() {
           className="z-50 w-64 rounded-lg border bg-popover p-2 text-popover-foreground shadow-lg outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
         >
           <div className="flex items-center gap-2 border-b px-2 py-2">
-            {data.user.avatarUrl ? (
+            {data.user?.avatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={data.user.avatarUrl}

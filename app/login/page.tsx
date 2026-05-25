@@ -1,7 +1,12 @@
 import Link from 'next/link';
-import { ArrowLeft, MessageCircle, Ship } from 'lucide-react';
-import { sanitizeNextPath } from '@/lib/auth/session';
+import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
+import {
+  getAuthenticatedCookieStoreUser,
+  sanitizeNextPath,
+} from '@/lib/auth/session';
 import { isWeChatConfigured } from '@/lib/auth/wechat';
+import { WeChatQrLogin } from '@/components/wechat-qr-login';
 
 const ERROR_MESSAGES: Record<string, string> = {
   wechat_not_configured: '微信开放平台参数还没有配置。',
@@ -23,67 +28,59 @@ export default async function LoginPage({
 }) {
   const params = await searchParams;
   const nextPath = sanitizeNextPath(getParam(params.next));
+  const user = getAuthenticatedCookieStoreUser(await cookies());
+  if (user) {
+    redirect(nextPath);
+  }
+
   const error = getParam(params.error);
   const wechatConfigured = isWeChatConfigured();
   const devLoginEnabled = process.env.AUTH_DEV_WECHAT_LOGIN === 'true';
+  const wechatStartUrl = `/api/auth/wechat/start?next=${encodeURIComponent(nextPath)}`;
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-background px-4 py-8">
-      <div className="w-full max-w-sm">
-        <Link
-          href={nextPath}
-          className="mb-6 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-4" />
-          返回
-        </Link>
+    <main className="flex min-h-dvh items-center justify-center bg-[#d8eaff] px-4 py-10 text-[#273142]">
+      <section className="relative flex min-h-[580px] w-full max-w-[490px] flex-col rounded-lg bg-white px-14 py-11 shadow-[0_24px_70px_rgba(52,108,180,0.18)] max-sm:min-h-[540px] max-sm:px-8">
+        <div className="pointer-events-none absolute right-6 top-6 size-10 text-[#2f67dd]">
+          <span className="absolute right-0 top-0 block size-9 border-r-[5px] border-t-[5px] border-current" />
+          <span className="absolute right-2 top-2 block size-6 border-r-[5px] border-t-[5px] border-current" />
+          <span className="absolute right-0 top-8 block h-2 w-2 border-r-[5px] border-current" />
+        </div>
 
-        <div className="rounded-lg border bg-card p-6 shadow-sm">
-          <div className="mb-6 flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-md bg-primary/10">
-              <Ship className="size-5 text-primary" />
-            </div>
-            <div>
-              <h1 className="text-lg font-semibold">登录 CruiseSwift</h1>
-              <p className="text-sm text-muted-foreground">保存聊天与付费权益</p>
-            </div>
+        <div>
+          <div className="flex size-12 items-center justify-center rounded-md bg-[#172a8a] text-lg font-semibold text-white shadow-[0_8px_18px_rgba(23,42,138,0.18)]">
+            邮
           </div>
+          <h1 className="mt-4 text-[26px] font-semibold leading-tight text-[#273142]">
+            AI 邮轮运营平台
+          </h1>
+        </div>
 
+        <div className="flex flex-1 flex-col items-center justify-center pt-10">
           {error && (
-            <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <div className="mb-6 w-full rounded-md border border-[#ffd1d1] bg-[#fff4f4] px-3 py-2 text-sm text-[#c03232]">
               {ERROR_MESSAGES[error] ?? '登录失败，请重新尝试。'}
             </div>
           )}
 
-          {wechatConfigured ? (
-            <Link
-              href={`/api/auth/wechat/start?next=${encodeURIComponent(nextPath)}`}
-              className="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-            >
-              <MessageCircle className="size-4" />
-              微信扫码登录
-            </Link>
-          ) : (
-            <button
-              type="button"
-              disabled
-              className="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-muted px-3 text-sm font-medium text-muted-foreground"
-            >
-              <MessageCircle className="size-4" />
-              等待微信开放平台参数
-            </button>
-          )}
+          <WeChatQrLogin
+            nextPath={nextPath}
+            enabled={wechatConfigured}
+            startUrl={wechatStartUrl}
+          />
+        </div>
 
+        <div className="min-h-10">
           {devLoginEnabled && (
             <Link
               href={`/api/auth/dev/wechat?next=${encodeURIComponent(nextPath)}`}
-              className="mt-3 flex h-10 w-full items-center justify-center rounded-md border px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+              className="mx-auto flex h-9 w-fit items-center justify-center rounded-md border border-[#d7e0ef] px-4 text-sm font-medium text-[#2d64db] hover:bg-[#f3f7ff]"
             >
               本地模拟微信登录
             </Link>
           )}
         </div>
-      </div>
+      </section>
     </main>
   );
 }

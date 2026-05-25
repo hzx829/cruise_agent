@@ -1,6 +1,8 @@
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/app-sidebar';
+import { getAuthenticatedCookieStoreUser } from '@/lib/auth/session';
 
 export default async function ChatLayout({
   children,
@@ -8,6 +10,11 @@ export default async function ChatLayout({
   children: React.ReactNode;
 }) {
   const cookieStore = await cookies();
+  const user = getAuthenticatedCookieStoreUser(cookieStore);
+  if (!user) {
+    redirect('/login?next=/chat');
+  }
+
   const sidebarState = cookieStore.get('sidebar_state')?.value;
   const defaultOpen = sidebarState !== 'false';
 

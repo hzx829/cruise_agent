@@ -6,7 +6,7 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
 } from '@/lib/db/notification-store';
-import { applySessionCookie, ensureRequestUser } from '@/lib/auth/session';
+import { getAuthenticatedRequestUser } from '@/lib/auth/session';
 
 /**
  * GET /api/notifications
@@ -16,20 +16,25 @@ import { applySessionCookie, ensureRequestUser } from '@/lib/auth/session';
  * - limit=50     限制条数
  */
 export async function GET(req: NextRequest) {
-  const auth = ensureRequestUser(req);
+  const user = getAuthenticatedRequestUser(req);
+  if (!user) {
+    return NextResponse.json(
+      { notifications: [], unreadCount: 0, authRequired: true },
+      { status: 401 },
+    );
+  }
+
   const { searchParams } = req.nextUrl;
   const unreadOnly = searchParams.get('unread') === 'true';
   const limit = parseInt(searchParams.get('limit') || '50', 10);
 
   const notifications = unreadOnly
-    ? getUnreadNotifications(auth.user.id, limit)
-    : getAllNotifications(auth.user.id, limit);
+    ? getUnreadNotifications(user.id, limit)
+    : getAllNotifications(user.id, limit);
 
-  const unreadCount = getUnreadCount(auth.user.id);
+  const unreadCount = getUnreadCount(user.id);
 
-  const response = NextResponse.json({ notifications, unreadCount });
-  applySessionCookie(response, auth);
-  return response;
+  return NextResponse.json({ notifications, unreadCount });
 }
 
 /**
@@ -39,16 +44,21 @@ export async function GET(req: NextRequest) {
  * Body: { all: true }  — 全部标记已读
  */
 export async function PATCH(req: Request) {
-  const auth = ensureRequestUser(req);
+  const user = getAuthenticatedRequestUser(req);
+  if (!user) {
+    return NextResponse.json(
+      { error: 'Login required', authRequired: true },
+      { status: 401 },
+    );
+  }
+
   const body = await req.json();
 
   if (body.all) {
-    markAllNotificationsRead(auth.user.id);
+    markAllNotificationsRead(user.id);
   } else if (body.id) {
-    markNotificationRead(body.id, auth.user.id);
+    markNotificationRead(body.id, user.id);
   }
 
-  const response = NextResponse.json({ success: true });
-  applySessionCookie(response, auth);
-  return response;
+  return NextResponse.json({ success: true });
 }

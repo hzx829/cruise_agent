@@ -1,16 +1,13 @@
 import { NextResponse } from 'next/server';
 import {
-  applySessionCookie,
-  ensureRequestUser,
+  getRequestUser,
   toPublicUser,
 } from '@/lib/auth/session';
 
 export async function GET(req: Request) {
-  const auth = ensureRequestUser(req);
-  const response = NextResponse.json({
-    user: toPublicUser(auth.user),
-    authenticated: !auth.user.isAnonymous,
+  const user = getRequestUser(req);
+  return NextResponse.json({
+    user: user ? toPublicUser(user) : null,
+    authenticated: Boolean(user && !user.isAnonymous),
   });
-  applySessionCookie(response, auth);
-  return response;
 }

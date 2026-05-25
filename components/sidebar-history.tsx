@@ -23,6 +23,10 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  fetchJsonWithAuthRedirect,
+  fetchWithAuthRedirect,
+} from '@/lib/auth/client';
 
 // ── 常量 ──────────────────────────────────────────────────
 
@@ -30,7 +34,7 @@ const PAGE_SIZE = 20;
 
 // ── Fetcher ───────────────────────────────────────────────
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+const fetcher = (url: string) => fetchJsonWithAuthRedirect<HistoryPage>(url);
 
 type HistoryPage = {
   chats: ChatRow[];
@@ -138,7 +142,7 @@ export function SidebarHistory() {
   const grouped = groupChatsByDate(chats);
 
   const handleDelete = async (chatId: string) => {
-    await fetch(`/api/chat/${chatId}`, { method: 'DELETE' });
+    await fetchWithAuthRedirect(`/api/chat/${chatId}`, { method: 'DELETE' });
     mutate();
     if (chatId === currentChatId) {
       router.push('/chat');
