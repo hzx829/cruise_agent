@@ -235,6 +235,10 @@ export function AgentTraceAdmin() {
     const storedToken = window.localStorage.getItem(TOKEN_STORAGE_KEY) ?? '';
     setToken(storedToken);
     setTokenInput(storedToken);
+
+    const params = new URLSearchParams(window.location.search);
+    const initialQ = params.get('q');
+    if (initialQ) setQ(initialQ);
   }, []);
 
   useEffect(() => {

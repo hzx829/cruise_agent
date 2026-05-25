@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Ship, Plus, Settings2 } from 'lucide-react';
+import { MessageSquareText, Ship, Plus, Settings2 } from 'lucide-react';
 
 import {
   Sidebar,
@@ -76,6 +76,14 @@ export function AppSidebar() {
               <Link href="/admin/prompts">
                 <Settings2 />
                 <span>Prompt 管理</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton tooltip="用户 Sessions" asChild>
+              <Link href="/admin/sessions">
+                <MessageSquareText />
+                <span>用户 Sessions</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
