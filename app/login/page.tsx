@@ -76,7 +76,7 @@ export default async function LoginPage({
               href={`/api/auth/dev/wechat?next=${encodeURIComponent(nextPath)}`}
               className="mx-auto flex h-9 w-fit items-center justify-center rounded-md border border-[#d7e0ef] px-4 text-sm font-medium text-[#2d64db] hover:bg-[#f3f7ff]"
             >
-              本地模拟微信登录
+              测试入口（模拟微信登录）
             </Link>
           )}
         </div>
