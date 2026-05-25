@@ -12,6 +12,30 @@ import {
   WECHAT_DEV_PROVIDER,
 } from '@/lib/auth/wechat';
 
+function firstForwardedHeaderValue(value: string | null): string | null {
+  return value?.split(',')[0]?.trim() || null;
+}
+
+function getPublicOrigin(req: Request): string {
+  if (process.env.APP_URL) {
+    return process.env.APP_URL.replace(/\/$/, '');
+  }
+
+  const forwardedHost = firstForwardedHeaderValue(
+    req.headers.get('x-forwarded-host'),
+  );
+  const host = forwardedHost || req.headers.get('host');
+  if (!host) return new URL(req.url).origin;
+
+  const forwardedProto = firstForwardedHeaderValue(
+    req.headers.get('x-forwarded-proto'),
+  );
+  const proto =
+    forwardedProto || (host.startsWith('localhost') ? 'http' : 'https');
+
+  return `${proto}://${host}`;
+}
+
 export async function GET(req: Request) {
   if (process.env.AUTH_DEV_WECHAT_LOGIN !== 'true') {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -29,7 +53,7 @@ export async function GET(req: Request) {
   migrateAnonymousUserToUser(currentUser, user.id);
 
   const session = createSessionForUser(user.id);
-  const response = NextResponse.redirect(new URL(nextPath, url.origin));
+  const response = NextResponse.redirect(new URL(nextPath, getPublicOrigin(req)));
   response.headers.append('Set-Cookie', getSessionSetCookieHeader(session));
   return response;
 }
