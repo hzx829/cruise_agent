@@ -12,6 +12,10 @@ type RouteStopOutput = {
   confidence: number | null;
 };
 
+const DEFAULT_TOP_DROP_LIMIT = 8;
+const MAX_TOP_DROP_LIMIT = 10;
+const MAX_ROUTE_STOPS_FOR_AGENT = 8;
+
 function parseStringList(value: string | null | undefined): string[] {
   if (!value) return [];
   try {
@@ -38,6 +42,7 @@ function parseRouteStops(value: string | null | undefined): RouteStopOutput[] {
               typeof item?.confidence === 'number' ? item.confidence : null,
           }))
           .filter((item) => item.portName)
+          .slice(0, MAX_ROUTE_STOPS_FOR_AGENT)
       : [];
   } catch {
     return [];
@@ -57,7 +62,7 @@ export const getTopPriceDrops = tool({
     const drops = queries.getTopPriceDrops({
       brand: params.brand,
       tier: tierArr,
-      limit: params.limit,
+      limit: Math.min(params.limit || DEFAULT_TOP_DROP_LIMIT, MAX_TOP_DROP_LIMIT),
       locale: 'zh-CN',
     });
 

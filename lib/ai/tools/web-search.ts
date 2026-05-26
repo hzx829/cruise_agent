@@ -13,7 +13,13 @@ interface TavilyResponse {
   answer?: string;
   results: TavilyResult[];
   query: string;
+  usage?: {
+    credits?: number;
+  };
+  response_time?: string | number;
 }
+
+type TavilySearchDepth = 'basic' | 'advanced' | 'fast' | 'ultra-fast';
 
 type SearchPurpose =
   | 'official_schedule'
@@ -35,6 +41,14 @@ type WebSourceType =
   | 'industry_media'
   | 'review_site'
   | 'general_web';
+
+const DEFAULT_TAVILY_TIMEOUT_MS = 8_000;
+const TAVILY_CACHE_TTL_MS = 10 * 60 * 1000;
+const TAVILY_CACHE_MAX_ENTRIES = 100;
+const tavilyCache = new Map<
+  string,
+  { expiresAt: number; data: TavilyResponse }
+>();
 
 const OFFICIAL_CRUISE_DOMAINS = [
   'royalcaribbean.com',
@@ -177,9 +191,66 @@ function buildFocusedQuery(params: {
   return focusedQuery.slice(0, 400);
 }
 
+function getTavilyTimeoutMs(): number {
+  const rawValue = Number(process.env.TAVILY_TIMEOUT_MS);
+  if (!Number.isFinite(rawValue) || rawValue <= 0) {
+    return DEFAULT_TAVILY_TIMEOUT_MS;
+  }
+  return Math.min(Math.max(Math.trunc(rawValue), 2_000), 20_000);
+}
+
+function getCachedTavilyResponse(key: string): TavilyResponse | null {
+  const cached = tavilyCache.get(key);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    tavilyCache.delete(key);
+    return null;
+  }
+  return cached.data;
+}
+
+function rememberTavilyResponse(key: string, data: TavilyResponse): void {
+  if (tavilyCache.size >= TAVILY_CACHE_MAX_ENTRIES) {
+    const oldestKey = tavilyCache.keys().next().value;
+    if (oldestKey) tavilyCache.delete(oldestKey);
+  }
+  tavilyCache.set(key, {
+    data,
+    expiresAt: Date.now() + TAVILY_CACHE_TTL_MS,
+  });
+}
+
+function allowAdvancedWebSearch(): boolean {
+  return process.env.ALLOW_ADVANCED_WEB_SEARCH === 'true';
+}
+
+function normalizeSearchDepth(value: unknown): TavilySearchDepth | undefined {
+  return value === 'basic' ||
+    value === 'advanced' ||
+    value === 'fast' ||
+    value === 'ultra-fast'
+    ? value
+    : undefined;
+}
+
+function getDefaultSearchDepth(): TavilySearchDepth {
+  return normalizeSearchDepth(process.env.TAVILY_SEARCH_DEPTH) ?? 'fast';
+}
+
+function chooseSearchDepth(
+  requestedDepth: TavilySearchDepth | undefined,
+): TavilySearchDepth {
+  const requested = normalizeSearchDepth(requestedDepth);
+  if (requested === 'advanced' && !allowAdvancedWebSearch()) {
+    const fallbackDepth = getDefaultSearchDepth();
+    return fallbackDepth === 'advanced' ? 'fast' : fallbackDepth;
+  }
+  return requested ?? getDefaultSearchDepth();
+}
+
 async function tavilySearch(params: {
   query: string;
-  searchDepth?: 'basic' | 'advanced';
+  searchDepth?: TavilySearchDepth;
   maxResults?: number;
   includeDomains?: string[];
   excludeDomains?: string[];
@@ -191,30 +262,49 @@ async function tavilySearch(params: {
     return { query: params.query, results: [] };
   }
 
-  const response = await fetch('https://api.tavily.com/search', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      query: params.query,
-      search_depth: params.searchDepth ?? 'basic',
-      max_results: Math.min(params.maxResults ?? 5, 10),
-      include_domains: params.includeDomains,
-      exclude_domains: params.excludeDomains,
-      topic: params.topic,
-      time_range: params.timeRange,
-      include_answer: true,
-    }),
-  });
+  const body = {
+    query: params.query,
+    search_depth: chooseSearchDepth(params.searchDepth),
+    max_results: Math.min(params.maxResults ?? 4, 5),
+    include_domains: params.includeDomains,
+    exclude_domains: params.excludeDomains,
+    topic: params.topic,
+    time_range: params.timeRange,
+    include_answer: true,
+    include_usage: true,
+  };
+  const cacheKey = JSON.stringify(body);
+  const cached = getCachedTavilyResponse(cacheKey);
+  if (cached) return cached;
 
-  if (!response.ok) {
-    console.error(`[webSearch] Tavily API error: ${response.status} ${response.statusText}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), getTavilyTimeoutMs());
+
+  try {
+    const response = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      console.error(`[webSearch] Tavily API error: ${response.status} ${response.statusText}`);
+      return { query: params.query, results: [] };
+    }
+
+    const data = (await response.json()) as TavilyResponse;
+    rememberTavilyResponse(cacheKey, data);
+    return data;
+  } catch (error) {
+    console.error('[webSearch] Tavily request failed', error);
     return { query: params.query, results: [] };
+  } finally {
+    clearTimeout(timeout);
   }
-
-  return response.json() as Promise<TavilyResponse>;
 }
 
 /**
@@ -240,7 +330,7 @@ export const webSearch = tool({
   inputSchema: z.object({
     query: z.string().describe('搜索关键词。建议使用英文或中英混合，以获取更丰富的结果。例如："Royal Caribbean vs MSC dining experience"'),
     searchDepth: z
-      .enum(['basic', 'advanced'])
+      .enum(['basic', 'advanced', 'fast', 'ultra-fast'])
       .optional()
       .describe('搜索深度。basic 速度快，advanced 信息更全面。复杂问题建议 advanced'),
     maxResults: z
@@ -327,8 +417,8 @@ export const webSearch = tool({
 
     const data = await tavilySearch({
       query: focusedQuery,
-      searchDepth: searchDepth ?? 'basic',
-      maxResults: maxResults ?? 5,
+      searchDepth,
+      maxResults: maxResults ?? 4,
       includeDomains,
       topic: effectivePurpose === 'news' ? 'news' : 'general',
       timeRange: recency === 'any' ? undefined : recency,
@@ -349,7 +439,7 @@ export const webSearch = tool({
         url: r.url,
         domain,
         sourceType: classifySourceType(r.url),
-        snippet: r.content?.slice(0, 600) ?? '',
+        snippet: r.content?.slice(0, 320) ?? '',
         publishedDate: r.published_date ?? null,
         relevanceScore: Math.round((r.score ?? 0) * 100) / 100,
       };
@@ -363,6 +453,8 @@ export const webSearch = tool({
       sourcePreference: effectiveSourcePreference,
       mustIncludeTerms: mustIncludeTerms ?? [],
       summary: data.answer ?? null,
+      usage: data.usage ?? null,
+      responseTime: data.response_time ?? null,
       sources,
       results: sources,
       resultCount: data.results.length,

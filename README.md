@@ -48,6 +48,13 @@ AI_PROVIDER=zhipu
 CHAT_MODEL=glm-5
 ZHIPU_API_KEY=your_key_here
 
+# Agent performance knobs
+# CHAT_MAX_OUTPUT_TOKENS=1400
+# TAVILY_API_KEY=tvly-xxx
+# TAVILY_TIMEOUT_MS=8000
+# TAVILY_SEARCH_DEPTH=fast
+# ALLOW_ADVANCED_WEB_SEARCH=false
+
 # OpenAI（AI_PROVIDER=openai 时使用）
 # OPENAI_API_KEY=sk-xxx
 

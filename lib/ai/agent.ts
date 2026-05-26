@@ -91,8 +91,25 @@ const ANALYTICS_TOOLS: CruiseToolName[] = [
 ];
 
 const WEB_TOOLS = new Set<CruiseToolName>(['webSearch', 'cruiseEncyclopedia']);
-const WRAP_UP_AFTER_STEP_WITH_TOOLS = 5;
-const HARD_FINAL_STEP = 7;
+const WRAP_UP_AFTER_STEP_WITH_TOOLS = 3;
+const HARD_FINAL_STEP = 5;
+const MAX_TOOL_RESULT_STEPS = 2;
+const DEFAULT_MAX_OUTPUT_TOKENS = 1400;
+const WEB_TOOL_BUDGET_BY_INTENT: Record<CruiseIntentContext['intent'], number> = {
+  price_quote: 1,
+  market_supply: 2,
+  review: 2,
+  comparison: 2,
+  copywriting: 1,
+  analytics: 0,
+  general: 1,
+};
+const FAST_FINAL_ANSWER_INSTRUCTIONS = `## Fast response rules
+Stop using tools now and answer in Chinese from the information already gathered.
+- Start with the conclusion or 1-3 recommendations.
+- Keep the answer concise by default, around 600-900 Chinese characters.
+- If information is insufficient, state the gap and the practical next step instead of searching again.
+- Do not output an empty answer or only describe tool activity.`;
 
 const FINAL_ANSWER_INSTRUCTIONS = `## 最终回答收束要求
 
@@ -122,13 +139,46 @@ function hasAnyToolResult(
   return steps.some((step) => step.toolResults.length > 0);
 }
 
-function shouldForceFinalAnswer(
-  stepNumber: number,
+function countToolResultSteps(
   steps: ReadonlyArray<{
     toolResults: Array<unknown>;
   }>,
+): number {
+  return steps.filter((step) => step.toolResults.length > 0).length;
+}
+
+function countWebToolResults(
+  steps: ReadonlyArray<{
+    toolResults: Array<{ toolName: string }>;
+  }>,
+): number {
+  return steps.reduce(
+    (sum, step) =>
+      sum +
+      step.toolResults.filter((toolResult) =>
+        WEB_TOOLS.has(toolResult.toolName as CruiseToolName),
+      ).length,
+    0,
+  );
+}
+
+function hasAnyWebToolResult(
+  steps: ReadonlyArray<{
+    toolResults: Array<{ toolName: string }>;
+  }>,
+): boolean {
+  return countWebToolResults(steps) > 0;
+}
+
+function shouldForceFinalAnswer(
+  stepNumber: number,
+  steps: ReadonlyArray<{
+    toolResults: Array<{ toolName: string }>;
+  }>,
 ): boolean {
   if (stepNumber >= HARD_FINAL_STEP) return true;
+  if (hasAnyWebToolResult(steps)) return true;
+  if (countToolResultSteps(steps) >= MAX_TOOL_RESULT_STEPS) return true;
   return stepNumber >= WRAP_UP_AFTER_STEP_WITH_TOOLS && hasAnyToolResult(steps);
 }
 
@@ -192,7 +242,14 @@ function chooseActiveTools(
       break;
   }
 
-  return intentContext.disableWeb && activeTools
+  if (!activeTools) return activeTools;
+
+  if (intentContext.disableWeb) {
+    return withoutWebTools(activeTools);
+  }
+
+  const webBudget = getWebToolBudget(intentContext);
+  return countWebToolResults(steps) >= webBudget
     ? withoutWebTools(activeTools)
     : activeTools;
 }
@@ -282,26 +339,90 @@ export function applyHardConstraintsToSearchDealsInput(
 }
 
 function createTools(intentContext?: CruiseIntentContext): typeof cruiseTools {
-  if (!intentContext) return cruiseTools;
+  const tools = { ...cruiseTools };
 
-  const searchDealsWithHardConstraints = {
-    ...searchDeals,
-    execute: async (input: unknown) => {
-      const effectiveInput = applyHardConstraintsToSearchDealsInput(
-        input,
-        intentContext,
-      );
-      if (!searchDeals.execute) {
-        throw new Error('searchDeals execute handler is unavailable');
-      }
-      return searchDeals.execute(effectiveInput as never, undefined as never);
-    },
-  } as typeof searchDeals;
+  if (intentContext) {
+    tools.searchDeals = {
+      ...searchDeals,
+      execute: async (input: unknown) => {
+        const effectiveInput = applyHardConstraintsToSearchDealsInput(
+          input,
+          intentContext,
+        );
+        if (!searchDeals.execute) {
+          throw new Error('searchDeals execute handler is unavailable');
+        }
+        return searchDeals.execute(effectiveInput as never, undefined as never);
+      },
+    } as typeof searchDeals;
+  }
 
-  return {
-    ...cruiseTools,
-    searchDeals: searchDealsWithHardConstraints,
+  const webBudgetState = {
+    budget: getWebToolBudget(intentContext),
+    used: 0,
   };
+
+  tools.webSearch = createBudgetedWebTool(
+    webSearch,
+    'webSearch',
+    webBudgetState,
+  );
+  tools.cruiseEncyclopedia = createBudgetedWebTool(
+    cruiseEncyclopedia,
+    'cruiseEncyclopedia',
+    webBudgetState,
+  );
+
+  return tools;
+}
+
+function getWebToolBudget(intentContext?: CruiseIntentContext): number {
+  if (intentContext?.disableWeb) return 0;
+  if (!intentContext) return 1;
+  const baseBudget = WEB_TOOL_BUDGET_BY_INTENT[intentContext.intent] ?? 1;
+  return intentContext.explicitNetworkRequest
+    ? Math.max(baseBudget, 2)
+    : baseBudget;
+}
+
+function createBudgetedWebTool<T extends typeof webSearch | typeof cruiseEncyclopedia>(
+  toolImpl: T,
+  toolName: CruiseToolName,
+  state: { budget: number; used: number },
+): T {
+  return {
+    ...toolImpl,
+    execute: async (input: unknown, options: unknown) => {
+      if (state.used >= state.budget) {
+        return {
+          available: false,
+          skipped: true,
+          skipReason: 'web_tool_budget_exceeded',
+          message:
+            '本轮网络搜索次数已达到上限，请基于已有搜索结果和直连数据作答。',
+          requestedTool: toolName,
+          results: [],
+          sources: [],
+          resultCount: 0,
+          dataSource: toolName,
+        };
+      }
+
+      state.used += 1;
+      if (!toolImpl.execute) {
+        throw new Error(`${toolName} execute handler is unavailable`);
+      }
+      return toolImpl.execute(input as never, options as never);
+    },
+  } as T;
+}
+
+function getMaxOutputTokens(): number {
+  const rawValue = Number(process.env.CHAT_MAX_OUTPUT_TOKENS);
+  if (!Number.isFinite(rawValue) || rawValue <= 0) {
+    return DEFAULT_MAX_OUTPUT_TOKENS;
+  }
+  return Math.min(Math.max(Math.trunc(rawValue), 400), 2400);
 }
 
 /**
@@ -325,12 +446,13 @@ export function createCruiseAgent(
     model,
     instructions,
     tools: createTools(options.intentContext),
+    maxOutputTokens: getMaxOutputTokens(),
     prepareStep: ({ steps, stepNumber }) => {
       if (shouldForceFinalAnswer(stepNumber, steps)) {
         return {
           activeTools: [],
           toolChoice: 'none' as const,
-          system: `${instructions}\n\n${FINAL_ANSWER_INSTRUCTIONS}`,
+          system: `${instructions}\n\n${FINAL_ANSWER_INSTRUCTIONS}\n\n${FAST_FINAL_ANSWER_INSTRUCTIONS}`,
         };
       }
 
@@ -340,8 +462,8 @@ export function createCruiseAgent(
     },
     experimental_onStepStart: options.onStepStart,
     experimental_onToolCallFinish: options.onToolCallFinish,
-    // 允许最多 8 步：典型场景是 DB查询(1-2步) + 搜索(1步) + 综合回答(1步)
-    stopWhen: stepCountIs(8),
+    // Keep the loop short: DB lookup, optional web fallback, final answer.
+    stopWhen: stepCountIs(6),
     onStepFinish: async ({ stepNumber, toolCalls, usage }) => {
       if (process.env.NODE_ENV === 'development' && toolCalls?.length) {
         const toolNames = toolCalls.map((tc) => tc.toolName).join(', ');

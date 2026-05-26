@@ -33,6 +33,70 @@ interface TavilyResult {
 interface TavilyResponse {
   answer?: string;
   results: TavilyResult[];
+  usage?: {
+    credits?: number;
+  };
+  response_time?: string | number;
+}
+
+type TavilySearchDepth = 'basic' | 'advanced' | 'fast' | 'ultra-fast';
+
+const DEFAULT_TAVILY_TIMEOUT_MS = 8_000;
+const TAVILY_CACHE_TTL_MS = 10 * 60 * 1000;
+const TAVILY_CACHE_MAX_ENTRIES = 100;
+const tavilyCache = new Map<
+  string,
+  { expiresAt: number; data: TavilyResponse }
+>();
+
+function getTavilyTimeoutMs(): number {
+  const rawValue = Number(process.env.TAVILY_TIMEOUT_MS);
+  if (!Number.isFinite(rawValue) || rawValue <= 0) {
+    return DEFAULT_TAVILY_TIMEOUT_MS;
+  }
+  return Math.min(Math.max(Math.trunc(rawValue), 2_000), 20_000);
+}
+
+function getCachedTavilyResponse(key: string): TavilyResponse | null {
+  const cached = tavilyCache.get(key);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    tavilyCache.delete(key);
+    return null;
+  }
+  return cached.data;
+}
+
+function rememberTavilyResponse(key: string, data: TavilyResponse): void {
+  if (tavilyCache.size >= TAVILY_CACHE_MAX_ENTRIES) {
+    const oldestKey = tavilyCache.keys().next().value;
+    if (oldestKey) tavilyCache.delete(oldestKey);
+  }
+  tavilyCache.set(key, {
+    data,
+    expiresAt: Date.now() + TAVILY_CACHE_TTL_MS,
+  });
+}
+
+function normalizeSearchDepth(value: unknown): TavilySearchDepth | undefined {
+  return value === 'basic' ||
+    value === 'advanced' ||
+    value === 'fast' ||
+    value === 'ultra-fast'
+    ? value
+    : undefined;
+}
+
+function getDefaultSearchDepth(): TavilySearchDepth {
+  return normalizeSearchDepth(process.env.TAVILY_SEARCH_DEPTH) ?? 'fast';
+}
+
+function chooseEncyclopediaDepth(): TavilySearchDepth {
+  if (process.env.ALLOW_ADVANCED_WEB_SEARCH === 'true') {
+    return 'advanced';
+  }
+  const defaultDepth = getDefaultSearchDepth();
+  return defaultDepth === 'advanced' ? 'fast' : defaultDepth;
 }
 
 async function tavilySearchDomain(params: {
@@ -44,27 +108,46 @@ async function tavilySearchDomain(params: {
     return { results: [] };
   }
 
-  const response = await fetch('https://api.tavily.com/search', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      query: params.query,
-      search_depth: 'advanced',
-      max_results: 5,
-      include_domains: params.domains,
-      include_answer: true,
-    }),
-  });
+  const body = {
+    query: params.query,
+    search_depth: chooseEncyclopediaDepth(),
+    max_results: 4,
+    include_domains: params.domains,
+    include_answer: true,
+    include_usage: true,
+  };
+  const cacheKey = JSON.stringify(body);
+  const cached = getCachedTavilyResponse(cacheKey);
+  if (cached) return cached;
 
-  if (!response.ok) {
-    console.error(`[cruiseEncyclopedia] Tavily API error: ${response.status}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), getTavilyTimeoutMs());
+
+  try {
+    const response = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      console.error(`[cruiseEncyclopedia] Tavily API error: ${response.status}`);
+      return { results: [] };
+    }
+
+    const data = (await response.json()) as TavilyResponse;
+    rememberTavilyResponse(cacheKey, data);
+    return data;
+  } catch (error) {
+    console.error('[cruiseEncyclopedia] Tavily request failed', error);
     return { results: [] };
+  } finally {
+    clearTimeout(timeout);
   }
-
-  return response.json() as Promise<TavilyResponse>;
 }
 
 /**
@@ -127,6 +210,8 @@ export const cruiseEncyclopedia = tool({
       query: fullQuery,
       topic: topic ?? 'general',
       summary: data.answer ?? null,
+      usage: data.usage ?? null,
+      responseTime: data.response_time ?? null,
       results: data.results.map((r) => ({
         title: r.title,
         url: r.url,
@@ -137,7 +222,7 @@ export const cruiseEncyclopedia = tool({
             return r.url;
           }
         })(),
-        snippet: r.content?.slice(0, 600) ?? '',
+        snippet: r.content?.slice(0, 320) ?? '',
         relevanceScore: Math.round((r.score ?? 0) * 100) / 100,
       })),
       resultCount: data.results.length,

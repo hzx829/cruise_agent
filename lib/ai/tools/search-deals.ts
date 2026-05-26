@@ -13,6 +13,10 @@ type RouteStopOutput = {
   confidence: number | null;
 };
 
+const DEFAULT_AGENT_DEAL_LIMIT = 8;
+const MAX_AGENT_DEAL_LIMIT = 12;
+const MAX_ROUTE_STOPS_FOR_AGENT = 8;
+
 function parseStringList(value: string | null | undefined): string[] {
   if (!value) return [];
   try {
@@ -39,6 +43,7 @@ function parseRouteStops(value: string | null | undefined): RouteStopOutput[] {
               typeof item?.confidence === 'number' ? item.confidence : null,
           }))
           .filter((item) => item.portName)
+          .slice(0, MAX_ROUTE_STOPS_FOR_AGENT)
       : [];
   } catch {
     return [];
@@ -123,7 +128,7 @@ export const searchDeals = tool({
     const result = queries.searchDeals({
       ...params,
       locale: 'zh-CN',
-      limit: Math.min(params.limit || 20, 50),
+      limit: Math.min(params.limit || DEFAULT_AGENT_DEAL_LIMIT, MAX_AGENT_DEAL_LIMIT),
     });
 
     return {
