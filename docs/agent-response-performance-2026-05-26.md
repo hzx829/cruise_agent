@@ -58,12 +58,15 @@ Z.AI guidance supports exposing thinking as a runtime control instead of forcing
 - GLM-5 has thinking enabled by default, and `thinking.type` can be set to `enabled` or `disabled`.
 - Z.AI recommends enabling thinking for complex reasoning and planning, while disabling it for simple tasks to get faster responses.
 - For the default chat path, fast direct answers are preferable; users can opt into deep thinking when the task justifies the extra latency.
+- AI SDK Elements follows a similar UI shape: mode/tools belong in the prompt input toolbar, while returned reasoning content is shown in a dedicated collapsible Reasoning block.
 
 Sources:
 
 - https://docs.z.ai/guides/llm/glm-5
 - https://docs.z.ai/guides/capabilities/thinking-mode
 - https://docs.z.ai/guides/overview/concept-param
+- https://elements.ai-sdk.dev/components/prompt-input
+- https://elements.ai-sdk.dev/components/reasoning
 
 Tavily guidance also supports conservative defaults:
 

@@ -7,7 +7,16 @@ import { DealList } from './deal-card';
 import { PriceChart } from './price-chart';
 import { CompareTable } from './compare-table';
 import { CopywritingCard } from './copywriting-card';
-import { Ship, Loader2, TrendingDown, BarChart3, CheckCircle2, AlertCircle } from 'lucide-react';
+import {
+  AlertCircle,
+  BarChart3,
+  Brain,
+  CheckCircle2,
+  ChevronDown,
+  Loader2,
+  Ship,
+  TrendingDown,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   ABORTED_ASSISTANT_FALLBACK_TEXT,
@@ -54,8 +63,19 @@ export function Message({
 }) {
   const isUser = message.role === 'user';
   const hasVisibleContent = isUser || hasRenderableContent(message);
+  const reasoningText = isUser
+    ? ''
+    : message.parts
+        .filter((part) => part.type === 'reasoning')
+        .map((part) => part.text)
+        .join('\n\n')
+        .trim();
+  const lastPart = message.parts[message.parts.length - 1];
+  const isReasoningStreaming =
+    !isUser && isLoading && lastPart?.type === 'reasoning';
 
-  const showLoadingDots = shouldShowLoadingDots(message, isLoading);
+  const showLoadingDots =
+    shouldShowLoadingDots(message, isLoading) && !isReasoningStreaming;
   const showEmptyFallback = !isUser && !isLoading && !hasVisibleContent;
 
   return (
@@ -80,6 +100,13 @@ export function Message({
             : 'w-full gap-2 md:gap-3'
         )}
       >
+        {reasoningText && (
+          <ReasoningBlock
+            isStreaming={Boolean(isReasoningStreaming)}
+            text={reasoningText}
+          />
+        )}
+
         {message.parts.map((part, idx) => {
           const key = `msg-${message.id}-part-${idx}`;
 
@@ -252,6 +279,37 @@ export function Message({
         )}
       </div>
     </div>
+  );
+}
+
+function ReasoningBlock({
+  isStreaming,
+  text,
+}: {
+  isStreaming: boolean;
+  text: string;
+}) {
+  return (
+    <details
+      open={isStreaming}
+      className="group overflow-hidden rounded-lg border bg-muted/30 text-xs text-muted-foreground"
+    >
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 outline-none transition-colors hover:bg-muted/50 [&::-webkit-details-marker]:hidden">
+        <Brain
+          className={cn(
+            'size-3.5 shrink-0 text-foreground',
+            isStreaming && 'animate-pulse',
+          )}
+        />
+        <span className="flex-1 font-medium text-foreground">
+          {isStreaming ? '正在思考' : '已完成思考'}
+        </span>
+        <ChevronDown className="size-3.5 shrink-0 transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="border-t px-3 pb-3 pt-2 leading-relaxed">
+        <pre className="whitespace-pre-wrap font-sans">{text}</pre>
+      </div>
+    </details>
   );
 }
 

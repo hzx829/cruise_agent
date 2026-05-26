@@ -1,6 +1,7 @@
 'use client';
 
 import { useChat } from '@ai-sdk/react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { DefaultChatTransport, generateId, type UIMessage } from 'ai';
 import {
   useState,
@@ -14,68 +15,113 @@ import {
 import {
   ArrowUp,
   Brain,
+  Check,
+  ChevronDown,
   Square,
   Ship,
   ArrowDown,
+  Zap,
 } from 'lucide-react';
 import { useSWRConfig } from 'swr';
 import { unstable_serialize } from 'swr/infinite';
 import { Message } from './message';
 import { ChatHeader } from './chat-header';
-import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { getChatHistoryPaginationKey } from './sidebar-history';
 import { fetchWithAuthRedirect } from '@/lib/auth/client';
 
-const THINKING_STORAGE_KEY = 'cruise-agent-thinking-enabled';
-const THINKING_STORAGE_EVENT = 'cruise-agent-thinking-change';
+type ChatMode = 'fast' | 'thinking';
 
-let thinkingPreferenceFallback = false;
+const CHAT_MODE_STORAGE_KEY = 'cruise-agent-response-mode';
+const CHAT_MODE_STORAGE_EVENT = 'cruise-agent-response-mode-change';
+const CHAT_MODES: Array<{
+  value: ChatMode;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: 'fast',
+    label: '快速',
+    description: '适用于大部分邮轮问答',
+  },
+  {
+    value: 'thinking',
+    label: '思考',
+    description: '复杂比较、规划和多条件问题',
+  },
+];
 
-function getThinkingPreferenceSnapshot(): boolean {
-  if (typeof window === 'undefined') return false;
+let chatModeFallback: ChatMode = 'fast';
+
+function normalizeChatMode(value: string | null): ChatMode {
+  if (value === 'thinking' || value === 'true') return 'thinking';
+  return 'fast';
+}
+
+function getChatModeSnapshot(): ChatMode {
+  if (typeof window === 'undefined') return 'fast';
 
   try {
-    const storedValue = window.localStorage.getItem(THINKING_STORAGE_KEY);
-    if (storedValue != null) {
-      thinkingPreferenceFallback = storedValue === 'true';
-    }
+    chatModeFallback = normalizeChatMode(
+      window.localStorage.getItem(CHAT_MODE_STORAGE_KEY) ??
+        window.localStorage.getItem('cruise-agent-thinking-enabled'),
+    );
   } catch {
     // Ignore storage failures and keep the in-memory fallback.
   }
 
-  return thinkingPreferenceFallback;
+  return chatModeFallback;
 }
 
-function getThinkingPreferenceServerSnapshot(): boolean {
-  return false;
+function getChatModeServerSnapshot(): ChatMode {
+  return 'fast';
 }
 
-function subscribeToThinkingPreference(onStoreChange: () => void): () => void {
+function subscribeToChatMode(onStoreChange: () => void): () => void {
   if (typeof window === 'undefined') return () => {};
 
   const handleStorage = (event: StorageEvent) => {
-    if (event.key === THINKING_STORAGE_KEY) onStoreChange();
+    if (
+      event.key === CHAT_MODE_STORAGE_KEY ||
+      event.key === 'cruise-agent-thinking-enabled'
+    ) {
+      onStoreChange();
+    }
   };
 
   window.addEventListener('storage', handleStorage);
-  window.addEventListener(THINKING_STORAGE_EVENT, onStoreChange);
+  window.addEventListener(CHAT_MODE_STORAGE_EVENT, onStoreChange);
 
   return () => {
     window.removeEventListener('storage', handleStorage);
-    window.removeEventListener(THINKING_STORAGE_EVENT, onStoreChange);
+    window.removeEventListener(CHAT_MODE_STORAGE_EVENT, onStoreChange);
   };
 }
 
-function setStoredThinkingPreference(value: boolean): void {
-  thinkingPreferenceFallback = value;
+function setStoredChatMode(value: ChatMode): void {
+  chatModeFallback = value;
 
   try {
-    window.localStorage.setItem(THINKING_STORAGE_KEY, String(value));
+    window.localStorage.setItem(CHAT_MODE_STORAGE_KEY, value);
   } catch {
     // Ignore storage failures; the in-memory setting still applies.
   }
 
-  window.dispatchEvent(new Event(THINKING_STORAGE_EVENT));
+  window.dispatchEvent(new Event(CHAT_MODE_STORAGE_EVENT));
+}
+
+function getChatModeConfig(mode: ChatMode) {
+  return CHAT_MODES.find((item) => item.value === mode) ?? CHAT_MODES[0];
+}
+
+function ChatModeIcon({
+  mode,
+  className,
+}: {
+  mode: ChatMode;
+  className?: string;
+}) {
+  if (mode === 'thinking') return <Brain className={className} />;
+  return <Zap className={className} />;
 }
 
 const QUICK_ACTIONS = [
@@ -122,11 +168,12 @@ function isCompletedToolPart(part: MessagePart | undefined): boolean {
 
 export function Chat({ id, initialMessages }: ChatProps) {
   const [chatId] = useState(() => id ?? generateId());
-  const thinkingEnabled = useSyncExternalStore(
-    subscribeToThinkingPreference,
-    getThinkingPreferenceSnapshot,
-    getThinkingPreferenceServerSnapshot,
+  const chatMode = useSyncExternalStore(
+    subscribeToChatMode,
+    getChatModeSnapshot,
+    getChatModeServerSnapshot,
   );
+  const thinkingEnabled = chatMode === 'thinking';
   const hasReplacedUrl = useRef(false);
   const { mutate } = useSWRConfig();
 
@@ -204,9 +251,9 @@ export function Chat({ id, initialMessages }: ChatProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
-  const toggleThinking = useCallback(() => {
-    setStoredThinkingPreference(!thinkingEnabled);
-  }, [thinkingEnabled]);
+  const selectChatMode = useCallback((value: ChatMode) => {
+    setStoredChatMode(value);
+  }, []);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -219,7 +266,10 @@ export function Chat({ id, initialMessages }: ChatProps) {
   const handleSubmit = (text?: string) => {
     const msg = text || input.trim();
     if (!msg || isLoading) return;
-    sendMessage({ text: msg }, { body: { thinkingEnabled } });
+    sendMessage(
+      { text: msg },
+      { body: { responseMode: chatMode, thinkingEnabled } },
+    );
     setInput('');
     // Reset textarea height
     if (textareaRef.current) {
@@ -321,30 +371,11 @@ export function Chat({ id, initialMessages }: ChatProps) {
             rows={1}
           />
           <div className="flex items-center justify-between p-1">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  onClick={toggleThinking}
-                  disabled={isLoading}
-                  aria-pressed={thinkingEnabled}
-                  aria-label={thinkingEnabled ? '关闭深度思考' : '开启深度思考'}
-                  className={`flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                    thinkingEnabled
-                      ? 'bg-primary/10 text-primary hover:bg-primary/15'
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                  }`}
-                >
-                  <Brain className="size-3.5" />
-                  <span className="hidden sm:inline">深度思考</span>
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                {thinkingEnabled
-                  ? '开启：更慢，适合复杂分析'
-                  : '关闭：更快，适合日常问答'}
-              </TooltipContent>
-            </Tooltip>
+            <ChatModeSelector
+              disabled={isLoading}
+              mode={chatMode}
+              onChange={selectChatMode}
+            />
             {isLoading ? (
               <button
                 onClick={() => stop()}
@@ -367,6 +398,66 @@ export function Chat({ id, initialMessages }: ChatProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+function ChatModeSelector({
+  disabled,
+  mode,
+  onChange,
+}: {
+  disabled: boolean;
+  mode: ChatMode;
+  onChange: (mode: ChatMode) => void;
+}) {
+  const current = getChatModeConfig(mode);
+
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button
+          type="button"
+          disabled={disabled}
+          aria-label="选择回答模式"
+          className="flex h-8 items-center gap-1.5 rounded-full px-2.5 text-sm text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <ChatModeIcon mode={mode} className="size-3.5 shrink-0" />
+          <span className="font-medium leading-none">{current.label}</span>
+          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          align="start"
+          side="top"
+          sideOffset={8}
+          className="z-50 w-64 rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg"
+        >
+          {CHAT_MODES.map((item) => (
+            <DropdownMenu.Item
+              key={item.value}
+              onSelect={() => onChange(item.value)}
+              className="flex cursor-default select-none items-start gap-3 rounded-md px-3 py-2.5 text-sm outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground"
+            >
+              <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center text-foreground">
+                <ChatModeIcon mode={item.value} className="size-4" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium leading-5">
+                  {item.label}
+                </span>
+                <span className="block text-xs leading-5 text-muted-foreground">
+                  {item.description}
+                </span>
+              </span>
+              {mode === item.value && (
+                <Check className="mt-1 size-4 shrink-0 text-foreground" />
+              )}
+            </DropdownMenu.Item>
+          ))}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }
 
