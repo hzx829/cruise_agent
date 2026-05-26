@@ -50,6 +50,7 @@ ZHIPU_API_KEY=your_key_here
 
 # Agent performance knobs
 # CHAT_MAX_OUTPUT_TOKENS=1400
+# CHAT_THINKING_DEFAULT=false
 # TAVILY_API_KEY=tvly-xxx
 # TAVILY_TIMEOUT_MS=8000
 # TAVILY_SEARCH_DEPTH=fast

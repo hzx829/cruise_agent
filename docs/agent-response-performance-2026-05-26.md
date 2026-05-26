@@ -34,6 +34,7 @@ Where quality could be affected:
 Mitigation:
 
 - `CHAT_MAX_OUTPUT_TOKENS` can raise final answer length without code changes.
+- `CHAT_THINKING_DEFAULT` can change the server fallback for non-UI requests; the chat UI defaults to fast mode and lets users opt into deep thinking per request.
 - `TAVILY_SEARCH_DEPTH` can switch default search depth.
 - `ALLOW_ADVANCED_WEB_SEARCH=true` enables advanced Tavily search for deeper retrieval.
 - Future work should add an explicit "deep research" mode instead of letting every chat turn behave like deep research.
@@ -51,6 +52,18 @@ Sources:
 
 - https://ai-sdk.dev/docs/reference/ai-sdk-core/tool-loop-agent
 - https://www.mintlify.com/vercel/ai/agents/loop-control
+
+Z.AI guidance supports exposing thinking as a runtime control instead of forcing it on for every chat turn:
+
+- GLM-5 has thinking enabled by default, and `thinking.type` can be set to `enabled` or `disabled`.
+- Z.AI recommends enabling thinking for complex reasoning and planning, while disabling it for simple tasks to get faster responses.
+- For the default chat path, fast direct answers are preferable; users can opt into deep thinking when the task justifies the extra latency.
+
+Sources:
+
+- https://docs.z.ai/guides/llm/glm-5
+- https://docs.z.ai/guides/capabilities/thinking-mode
+- https://docs.z.ai/guides/overview/concept-param
 
 Tavily guidance also supports conservative defaults:
 

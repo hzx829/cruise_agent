@@ -38,7 +38,37 @@ const AGENT_STREAM_TIMEOUT = {
   chunkMs: 25_000,
 } as const;
 
-function getModel() {
+function parseBoolean(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value;
+  if (typeof value !== 'string') return undefined;
+
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off', 'disabled'].includes(normalized)) return false;
+  return undefined;
+}
+
+function getDefaultThinkingEnabled(): boolean {
+  return parseBoolean(process.env.CHAT_THINKING_DEFAULT) ?? false;
+}
+
+function resolveThinkingEnabled(value: unknown): boolean {
+  return parseBoolean(value) ?? getDefaultThinkingEnabled();
+}
+
+function supportsZhipuThinking(model: string): boolean {
+  const normalized = model.toLowerCase();
+  return (
+    normalized.includes('glm-5') ||
+    normalized.includes('glm-4.7') ||
+    normalized.includes('glm-4.6') ||
+    normalized.includes('glm-4.5') ||
+    normalized.includes('glm-z1') ||
+    normalized.includes('thinking')
+  );
+}
+
+function getModel({ thinkingEnabled }: { thinkingEnabled: boolean }) {
   const provider = process.env.AI_PROVIDER || 'zhipu';
   const model = process.env.CHAT_MODEL || 'glm-4-flash';
 
@@ -47,7 +77,13 @@ function getModel() {
       const zhipu = createZhipu({
         apiKey: process.env.ZHIPU_API_KEY,
       });
-      return zhipu(model);
+      if (!supportsZhipuThinking(model)) return zhipu(model);
+      return zhipu(model, {
+        thinking: {
+          type: thinkingEnabled ? 'enabled' : 'disabled',
+          clearThinking: true,
+        },
+      });
     }
     case 'openai': {
       const openai = createOpenAI({
@@ -123,7 +159,13 @@ export async function POST(req: Request) {
     );
   }
 
-  const { message, id }: { message: UIMessage; id: string } = await req.json();
+  const {
+    message,
+    id,
+    thinkingEnabled: rawThinkingEnabled,
+  }: { message: UIMessage; id: string; thinkingEnabled?: unknown } =
+    await req.json();
+  const thinkingEnabled = resolveThinkingEnabled(rawThinkingEnabled);
 
   // 从 DB 加载历史消息；若 chat 不存在则首次创建
   let previousMessages: UIMessage[] = [];
@@ -267,7 +309,7 @@ export async function POST(req: Request) {
     }
   }
 
-  const agent = createCruiseAgent(getModel(), {
+  const agent = createCruiseAgent(getModel({ thinkingEnabled }), {
     intentContext,
     promptTemplate: activePrompt.content,
     onStepStart: (event) => {
@@ -318,6 +360,7 @@ export async function POST(req: Request) {
     agent,
     uiMessages: allMessages,
     generateMessageId,
+    sendReasoning: thinkingEnabled,
     timeout: AGENT_STREAM_TIMEOUT,
     onStepFinish: async ({
       stepNumber,

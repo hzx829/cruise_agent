@@ -8,10 +8,12 @@ import {
   useEffect,
   useCallback,
   useMemo,
+  useSyncExternalStore,
   type KeyboardEvent,
 } from 'react';
 import {
   ArrowUp,
+  Brain,
   Square,
   Ship,
   ArrowDown,
@@ -20,8 +22,61 @@ import { useSWRConfig } from 'swr';
 import { unstable_serialize } from 'swr/infinite';
 import { Message } from './message';
 import { ChatHeader } from './chat-header';
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { getChatHistoryPaginationKey } from './sidebar-history';
 import { fetchWithAuthRedirect } from '@/lib/auth/client';
+
+const THINKING_STORAGE_KEY = 'cruise-agent-thinking-enabled';
+const THINKING_STORAGE_EVENT = 'cruise-agent-thinking-change';
+
+let thinkingPreferenceFallback = false;
+
+function getThinkingPreferenceSnapshot(): boolean {
+  if (typeof window === 'undefined') return false;
+
+  try {
+    const storedValue = window.localStorage.getItem(THINKING_STORAGE_KEY);
+    if (storedValue != null) {
+      thinkingPreferenceFallback = storedValue === 'true';
+    }
+  } catch {
+    // Ignore storage failures and keep the in-memory fallback.
+  }
+
+  return thinkingPreferenceFallback;
+}
+
+function getThinkingPreferenceServerSnapshot(): boolean {
+  return false;
+}
+
+function subscribeToThinkingPreference(onStoreChange: () => void): () => void {
+  if (typeof window === 'undefined') return () => {};
+
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key === THINKING_STORAGE_KEY) onStoreChange();
+  };
+
+  window.addEventListener('storage', handleStorage);
+  window.addEventListener(THINKING_STORAGE_EVENT, onStoreChange);
+
+  return () => {
+    window.removeEventListener('storage', handleStorage);
+    window.removeEventListener(THINKING_STORAGE_EVENT, onStoreChange);
+  };
+}
+
+function setStoredThinkingPreference(value: boolean): void {
+  thinkingPreferenceFallback = value;
+
+  try {
+    window.localStorage.setItem(THINKING_STORAGE_KEY, String(value));
+  } catch {
+    // Ignore storage failures; the in-memory setting still applies.
+  }
+
+  window.dispatchEvent(new Event(THINKING_STORAGE_EVENT));
+}
 
 const QUICK_ACTIONS = [
   {
@@ -67,6 +122,11 @@ function isCompletedToolPart(part: MessagePart | undefined): boolean {
 
 export function Chat({ id, initialMessages }: ChatProps) {
   const [chatId] = useState(() => id ?? generateId());
+  const thinkingEnabled = useSyncExternalStore(
+    subscribeToThinkingPreference,
+    getThinkingPreferenceSnapshot,
+    getThinkingPreferenceServerSnapshot,
+  );
   const hasReplacedUrl = useRef(false);
   const { mutate } = useSWRConfig();
 
@@ -76,9 +136,10 @@ export function Chat({ id, initialMessages }: ChatProps) {
     transport: new DefaultChatTransport({
       api: '/api/chat',
       fetch: fetchWithAuthRedirect,
-      prepareSendMessagesRequest({ messages }) {
+      prepareSendMessagesRequest({ messages, body }) {
         return {
           body: {
+            ...(body ?? {}),
             message: messages[messages.length - 1],
             id: chatId,
           },
@@ -143,6 +204,10 @@ export function Chat({ id, initialMessages }: ChatProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
+  const toggleThinking = useCallback(() => {
+    setStoredThinkingPreference(!thinkingEnabled);
+  }, [thinkingEnabled]);
+
   // Auto-resize textarea
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -154,7 +219,7 @@ export function Chat({ id, initialMessages }: ChatProps) {
   const handleSubmit = (text?: string) => {
     const msg = text || input.trim();
     if (!msg || isLoading) return;
-    sendMessage({ text: msg });
+    sendMessage({ text: msg }, { body: { thinkingEnabled } });
     setInput('');
     // Reset textarea height
     if (textareaRef.current) {
@@ -255,7 +320,31 @@ export function Chat({ id, initialMessages }: ChatProps) {
             disabled={isLoading}
             rows={1}
           />
-          <div className="flex items-center justify-end p-1">
+          <div className="flex items-center justify-between p-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={toggleThinking}
+                  disabled={isLoading}
+                  aria-pressed={thinkingEnabled}
+                  aria-label={thinkingEnabled ? '关闭深度思考' : '开启深度思考'}
+                  className={`flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                    thinkingEnabled
+                      ? 'bg-primary/10 text-primary hover:bg-primary/15'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                  }`}
+                >
+                  <Brain className="size-3.5" />
+                  <span className="hidden sm:inline">深度思考</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                {thinkingEnabled
+                  ? '开启：更慢，适合复杂分析'
+                  : '关闭：更快，适合日常问答'}
+              </TooltipContent>
+            </Tooltip>
             {isLoading ? (
               <button
                 onClick={() => stop()}
