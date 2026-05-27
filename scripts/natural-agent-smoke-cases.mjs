@@ -79,6 +79,14 @@ export const CASES = [
     requiredTools: ['webSearch'],
     requiredInputTerms: { webSearch: ['天津'] },
   },
+  {
+    id: 13,
+    query:
+      '2026年8月12日将发生罕见的、持续近6分钟的日全食。全球的最佳观测点从北极圈穿过冰岛直达西班牙。帮我看看有什么邮轮可以实现在海上看到日全食的体验？',
+    expectedIntent: 'market_supply',
+    requiredTools: ['webSearch'],
+    forbiddenResponseTerms: ['ActionCreators', 'StackNavigator'],
+  },
 ];
 
 export default CASES;

@@ -18,6 +18,7 @@ import {
   ERROR_ASSISTANT_FALLBACK_TEXT,
   createFallbackAssistantMessage,
   ensureRenderableAssistantMessage,
+  hasMalformedToolArtifact,
   hasRenderableContent,
 } from '@/lib/ai/message-content';
 import { getActivePromptTemplate } from '@/lib/ai/prompt-store';
@@ -440,6 +441,9 @@ export async function POST(req: Request) {
           dropIncompleteToolParts: isAborted,
         }),
       );
+      const malformedToolArtifactCount = newMessages.filter(
+        (msg) => msg.role === 'assistant' && hasMalformedToolArtifact(msg),
+      ).length;
       const emptyAssistantCount = newMessages.filter(
         (msg) => msg.role === 'assistant' && !hasRenderableContent(msg),
       ).length;
@@ -452,7 +456,11 @@ export async function POST(req: Request) {
         const usageTokens = getUsageTokens(totalUsage);
         updateAgentRun({
           runId,
-          status: isAborted ? 'aborted' : 'completed',
+          status: isAborted
+            ? 'aborted'
+            : malformedToolArtifactCount > 0
+              ? 'error'
+              : 'completed',
           endedAt: toIsoTime(Date.now()),
           durationMs: Date.now() - runStartedAt,
           finishReason: finishReason ?? null,
@@ -461,6 +469,10 @@ export async function POST(req: Request) {
           emptyAssistantCount,
           toolStepCount,
           toolResultCount,
+          error:
+            malformedToolArtifactCount > 0
+              ? new Error('Model emitted malformed tool-call text artifact')
+              : undefined,
           ...usageTokens,
         });
       } catch (persistError) {
@@ -475,6 +487,7 @@ export async function POST(req: Request) {
         isAborted,
         newMessageCount: newMessages.length,
         emptyAssistantCount,
+        malformedToolArtifactCount,
         toolStepCount,
         toolResultCount,
       });

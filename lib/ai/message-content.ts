@@ -9,6 +9,9 @@ export const ABORTED_ASSISTANT_FALLBACK_TEXT =
 export const ERROR_ASSISTANT_FALLBACK_TEXT =
   '这次生成中断了，我没有拿到有效回复。请稍后重试，或把问题缩短一点再发。';
 
+export const MALFORMED_TOOL_ASSISTANT_FALLBACK_TEXT =
+  '这次回答在继续检索前提前结束了，我先把这条结果标记为未完成。请重试一次，我会换一种更稳的方式直接给完整结论。';
+
 type MessagePart = UIMessage['parts'][number];
 
 const RENDERABLE_TOOL_PART_TYPES = new Set<string>([
@@ -35,6 +38,12 @@ const INCOMPLETE_TOOL_STATES = new Set<string>([
 ]);
 
 const STREAMING_PART_STATES = new Set<string>(['streaming']);
+const MALFORMED_TOOL_ARTIFACT_PATTERN =
+  /\b(?:ActionCreators|StackNavigator)\b|(?:^|\s)(?:webSearch|searchDeals|cruiseEncyclopedia|lookupShips)\s*\(/i;
+const TOOL_ARTIFACT_TAIL_PATTERN =
+  /\s*(?:ActionCreators|StackNavigator)[\s\S]*$/i;
+const TRAILING_SEARCH_PROMISE_PATTERN =
+  /(?:让我|我会|下面|接下来)?(?:继续|再|进一步)?(?:搜索|检索|查找|核实)[^。！？\n]*[：:，,]?\s*$/;
 
 interface EnsureRenderableAssistantMessageOptions {
   appendFallbackText?: boolean;
@@ -79,9 +88,46 @@ function normalizeFinishedPart(
   return part;
 }
 
+function cleanMalformedToolText(text: string): string {
+  return text
+    .replace(TOOL_ARTIFACT_TAIL_PATTERN, '')
+    .replace(TRAILING_SEARCH_PROMISE_PATTERN, '')
+    .trimEnd();
+}
+
+function hasTextArtifact(text: string): boolean {
+  return MALFORMED_TOOL_ARTIFACT_PATTERN.test(text);
+}
+
+function normalizeMalformedToolArtifacts(parts: MessagePart[]): {
+  parts: MessagePart[];
+  hadArtifact: boolean;
+} {
+  let hadArtifact = false;
+
+  const normalizedParts = parts
+    .map((part) => {
+      if (part.type !== 'text' || !hasTextArtifact(part.text)) return part;
+
+      hadArtifact = true;
+      const cleanedText = cleanMalformedToolText(part.text);
+      if (!cleanedText.trim()) return null;
+      return { ...part, text: cleanedText, state: 'done' } as MessagePart;
+    })
+    .filter((part): part is MessagePart => Boolean(part));
+
+  return { parts: normalizedParts, hadArtifact };
+}
+
 export function hasAssistantTextContent(message: UIMessage): boolean {
   return message.parts.some(
     (part) => part.type === 'text' && part.text.trim().length > 0,
+  );
+}
+
+export function hasMalformedToolArtifact(message: UIMessage): boolean {
+  return message.parts.some(
+    (part) => part.type === 'text' && hasTextArtifact(part.text),
   );
 }
 
@@ -116,10 +162,26 @@ export function ensureRenderableAssistantMessage(
     .map((part) => normalizeFinishedPart(part, options))
     .filter((part): part is MessagePart => Boolean(part));
 
+  const artifactNormalized = normalizeMalformedToolArtifacts(normalizedParts);
+
   const normalizedMessage: UIMessage = {
     ...message,
-    parts: normalizedParts,
+    parts: artifactNormalized.parts,
   };
+
+  if (artifactNormalized.hadArtifact) {
+    return {
+      ...normalizedMessage,
+      parts: [
+        ...normalizedMessage.parts,
+        {
+          type: 'text',
+          text: MALFORMED_TOOL_ASSISTANT_FALLBACK_TEXT,
+          state: 'done',
+        } as MessagePart,
+      ],
+    };
+  }
 
   if (hasRenderableContent(normalizedMessage)) {
     if (

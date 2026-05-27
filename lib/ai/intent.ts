@@ -270,7 +270,7 @@ function detectIntent(query: string): CruiseIntent {
   if (asksAnalytics) return 'analytics';
 
   const asksPrice = /价格|报价|多少钱|便宜|最便宜|特价|优惠|折扣|降价|涨价|比价|deal/i.test(query);
-  const asksSupply = /有没有|有船|有哪些|班期|航线|母港|出发|靠港|邮轮信息|供给/i.test(query);
+  const asksSupply = /有没有|有船|有哪些|有什么邮轮|哪些邮轮|邮轮.*(?:可以|能|实现|体验)|主题邮轮|班期|航线|母港|出发|靠港|邮轮信息|供给/i.test(query);
   const asksReview = /评测|口碑|餐饮|设施|娱乐|服务|体验|攻略|怎么玩|怎么样|好不好|值不值得|值得买/i.test(query);
   const asksComparison = /对比|比较|哪个|哪家|vs|和.*比/i.test(query);
 

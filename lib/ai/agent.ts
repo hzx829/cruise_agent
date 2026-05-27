@@ -109,7 +109,9 @@ Stop using tools now and answer in Chinese from the information already gathered
 - Start with the conclusion or 1-3 recommendations.
 - Keep the answer concise by default, around 600-900 Chinese characters.
 - If information is insufficient, state the gap and the practical next step instead of searching again.
-- Do not output an empty answer or only describe tool activity.`;
+- Do not output an empty answer or only describe tool activity.
+- Never output internal tool-call text or pseudo-code such as ActionCreators, StackNavigator, JSON tool-call arrays, or "call webSearch(...)".
+- If you want another search but tools are unavailable, answer from the current evidence and clearly state the evidence gap.`;
 
 const FINAL_ANSWER_INSTRUCTIONS = `## 最终回答收束要求
 
@@ -162,22 +164,16 @@ function countWebToolResults(
   );
 }
 
-function hasAnyWebToolResult(
-  steps: ReadonlyArray<{
-    toolResults: Array<{ toolName: string }>;
-  }>,
-): boolean {
-  return countWebToolResults(steps) > 0;
-}
-
 function shouldForceFinalAnswer(
   stepNumber: number,
+  intentContext: CruiseIntentContext | undefined,
   steps: ReadonlyArray<{
     toolResults: Array<{ toolName: string }>;
   }>,
 ): boolean {
   if (stepNumber >= HARD_FINAL_STEP) return true;
-  if (hasAnyWebToolResult(steps)) return true;
+  const webBudget = getWebToolBudget(intentContext);
+  if (webBudget > 0 && countWebToolResults(steps) >= webBudget) return true;
   if (countToolResultSteps(steps) >= MAX_TOOL_RESULT_STEPS) return true;
   return stepNumber >= WRAP_UP_AFTER_STEP_WITH_TOOLS && hasAnyToolResult(steps);
 }
@@ -381,7 +377,7 @@ function getWebToolBudget(intentContext?: CruiseIntentContext): number {
   if (!intentContext) return 1;
   const baseBudget = WEB_TOOL_BUDGET_BY_INTENT[intentContext.intent] ?? 1;
   return intentContext.explicitNetworkRequest
-    ? Math.max(baseBudget, 2)
+    ? Math.max(baseBudget, 3)
     : baseBudget;
 }
 
@@ -448,7 +444,7 @@ export function createCruiseAgent(
     tools: createTools(options.intentContext),
     maxOutputTokens: getMaxOutputTokens(),
     prepareStep: ({ steps, stepNumber }) => {
-      if (shouldForceFinalAnswer(stepNumber, steps)) {
+      if (shouldForceFinalAnswer(stepNumber, options.intentContext, steps)) {
         return {
           activeTools: [],
           toolChoice: 'none' as const,

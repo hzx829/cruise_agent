@@ -60,6 +60,9 @@ function textOf(value) {
   return JSON.stringify(value ?? '');
 }
 
+const MALFORMED_TOOL_ARTIFACT_PATTERN =
+  /\b(?:ActionCreators|StackNavigator)\b|(?:^|\s)(?:webSearch|searchDeals|cruiseEncyclopedia|lookupShips)\s*\(/i;
+
 function getLatestRun(db, query, options) {
   const where = ['user_query = ?'];
   const params = [query];
@@ -164,6 +167,10 @@ function evaluateCase(db, smokeCase, options) {
 
   if (run.assistant_text_len === 0 || run.empty_assistant_count > 0) {
     failures.push('assistant 输出为空或不可渲染');
+  }
+
+  if (MALFORMED_TOOL_ARTIFACT_PATTERN.test(assistantText)) {
+    failures.push('assistant 输出包含伪工具调用残片');
   }
 
   if (
