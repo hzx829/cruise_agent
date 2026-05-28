@@ -127,15 +127,17 @@ export function DealCard({ deal }: { deal: DealData }) {
   const routeSourceUrl = deal.routeSourceUrl || deal.dealUrl;
 
   return (
-    <div className="rounded-xl border bg-card p-4 shadow-sm transition-shadow hover:shadow-md">
+    <div className="w-full max-w-full overflow-hidden rounded-xl border bg-card p-3 shadow-sm transition-shadow hover:shadow-md sm:p-4">
       {/* Header: name + price */}
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-semibold text-card-foreground">
+          <h3 className="break-words text-sm font-semibold leading-snug text-card-foreground">
             {deal.dealName}
           </h3>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
-            <span className="text-xs text-muted-foreground">{deal.brand}</span>
+            <span className="max-w-full break-words text-xs text-muted-foreground">
+              {deal.brand}
+            </span>
             {tier && (
               <span
                 className={cn(
@@ -159,8 +161,8 @@ export function DealCard({ deal }: { deal: DealData }) {
             )}
           </div>
         </div>
-        <div className="shrink-0 text-right">
-          <div className="text-lg font-bold text-primary">
+        <div className="shrink-0 text-left sm:text-right">
+          <div className="text-base font-bold leading-tight text-primary sm:text-lg">
             {currencySymbol}
             {deal.price.toLocaleString()}
           </div>
@@ -187,7 +189,7 @@ export function DealCard({ deal }: { deal: DealData }) {
 
       {/* Historical price range */}
       {deal.priceHighest != null && deal.priceLowest != null && (
-        <div className="mt-2 rounded-lg bg-muted/50 px-2.5 py-1.5 text-xs text-muted-foreground">
+        <div className="mt-2 break-words rounded-lg bg-muted/50 px-2.5 py-1.5 text-xs text-muted-foreground">
           历史价格 {currencySymbol}
           {deal.priceLowest.toLocaleString()} ~ {currencySymbol}
           {deal.priceHighest.toLocaleString()}
@@ -195,28 +197,28 @@ export function DealCard({ deal }: { deal: DealData }) {
       )}
 
       {/* Info grid */}
-      <div className="mt-2.5 grid grid-cols-2 gap-1.5 text-xs text-muted-foreground">
+      <div className="mt-2.5 grid grid-cols-1 gap-1.5 text-xs text-muted-foreground min-[420px]:grid-cols-2">
         {deal.shipName && (
-          <div className="flex items-center gap-1">
+          <div className="flex min-w-0 items-center gap-1">
             <Ship className="size-3 shrink-0" />
             <span className="truncate">{deal.shipName}</span>
           </div>
         )}
         {deal.destination && (
-          <div className="flex items-center gap-1">
+          <div className="flex min-w-0 items-center gap-1">
             <MapPin className="size-3 shrink-0" />
             <span className="truncate">{deal.destination}</span>
           </div>
         )}
         {deal.sailDate && (
-          <div className="flex items-center gap-1">
+          <div className="flex min-w-0 items-center gap-1">
             <Calendar className="size-3 shrink-0" />
-            <span>{deal.sailDate}</span>
+            <span className="truncate">{deal.sailDate}</span>
           </div>
         )}
         {deal.durationDays && (
-          <div className="flex items-center gap-1">
-            <span>⏱️</span>
+          <div className="flex min-w-0 items-center gap-1">
+            <span className="shrink-0">⏱️</span>
             <span>{deal.durationDays}天</span>
           </div>
         )}
@@ -226,7 +228,7 @@ export function DealCard({ deal }: { deal: DealData }) {
         <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-muted/35 px-2.5 py-1.5 text-xs text-muted-foreground">
           <Route className="mt-0.5 size-3 shrink-0" />
           <div className="min-w-0">
-            <span className="break-words">{routeText}</span>
+            <span className="break-words leading-relaxed">{routeText}</span>
             {deal.routeType && (
               <span className="ml-1 text-[11px]">
                 {deal.routeType === 'roundtrip' ? '往返' : '开口'}
@@ -237,7 +239,7 @@ export function DealCard({ deal }: { deal: DealData }) {
       )}
 
       {!routeText && routeSourceUrl && (
-        <div className="mt-2 flex items-center justify-between gap-2 rounded-lg bg-muted/35 px-2.5 py-1.5 text-xs text-muted-foreground">
+        <div className="mt-2 flex flex-col gap-1.5 rounded-lg bg-muted/35 px-2.5 py-1.5 text-xs text-muted-foreground min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
           <span>停靠港待补全</span>
           <a
             href={routeSourceUrl}
@@ -256,10 +258,10 @@ export function DealCard({ deal }: { deal: DealData }) {
           {deal.perks.slice(0, 3).map((perk, i) => (
             <span
               key={i}
-              className="inline-flex items-center gap-0.5 rounded bg-green-50 px-1.5 py-0.5 text-xs text-green-700 dark:bg-green-900/20 dark:text-green-400"
+              className="inline-flex max-w-full items-start gap-0.5 rounded bg-green-50 px-1.5 py-0.5 text-xs text-green-700 dark:bg-green-900/20 dark:text-green-400"
             >
-              <Tag className="size-2.5" />
-              {perk}
+              <Tag className="mt-0.5 size-2.5 shrink-0" />
+              <span className="min-w-0 break-words">{perk}</span>
             </span>
           ))}
           {deal.perks.length > 3 && (
@@ -276,7 +278,7 @@ export function DealCard({ deal }: { deal: DealData }) {
           href={deal.dealUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+          className="mt-2 inline-flex max-w-full items-center gap-1 text-xs text-primary hover:underline"
         >
           查看详情 <ExternalLink className="size-3" />
         </a>
@@ -290,8 +292,8 @@ export function DealList({ deals }: { deals: DealData[] }) {
   return (
     <div
       className={cn(
-        'grid gap-3',
-        deals.length === 1 ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'
+        'grid min-w-0 gap-3',
+        deals.length === 1 ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-2'
       )}
     >
       {deals.map((deal) => (

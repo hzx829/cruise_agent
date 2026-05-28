@@ -81,23 +81,23 @@ export function Message({
   return (
     <div
       className={cn(
-        'group/message animate-fade-in flex w-full items-start gap-2 px-4 py-3 md:gap-3',
+        'group/message animate-fade-in flex w-full min-w-0 items-start gap-2 px-2 py-3 sm:px-3 md:gap-3 md:px-4',
         isUser ? 'justify-end' : 'justify-start'
       )}
       data-role={message.role}
     >
       {!isUser && (
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-background ring-1 ring-border">
+        <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-background ring-1 ring-border sm:size-8">
           <Ship className="size-4 text-primary" />
         </div>
       )}
 
       <div
         className={cn(
-          'flex flex-col',
+          'flex min-w-0 flex-col',
           isUser
-            ? 'max-w-[calc(100%-2.5rem)] sm:max-w-[min(fit-content,80%)]'
-            : 'w-full gap-2 md:gap-3'
+            ? 'max-w-[88%] sm:max-w-[min(fit-content,80%)]'
+            : 'flex-1 gap-2 md:gap-3'
         )}
       >
         {reasoningText && (
@@ -117,54 +117,72 @@ export function Message({
                 <div
                   key={key}
                   className={cn(
-                    'rounded-2xl text-sm leading-relaxed',
+                    'max-w-full break-words rounded-2xl text-sm leading-relaxed',
                     isUser
-                      ? 'bg-primary px-3 py-2 text-primary-foreground'
+                      ? 'whitespace-pre-wrap bg-primary px-3 py-2 text-primary-foreground'
                       : 'bg-transparent px-0 py-0 text-foreground'
                   )}
                 >
                   {isUser ? (
                     part.text
                   ) : (
-                    <div className="prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-headings:my-2 prose-pre:my-2">
+                    <div className="prose prose-sm max-w-none break-words dark:prose-invert prose-headings:my-2 prose-li:my-0.5 prose-ol:my-1 prose-p:my-1 prose-pre:my-2 prose-ul:my-1">
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
                         components={{
                           p: ({ children }) => (
-                            <p className="mb-2 last:mb-0">{children}</p>
+                            <p className="mb-2 break-words last:mb-0">{children}</p>
                           ),
                           ul: ({ children }) => (
-                            <ul className="mb-2 list-disc space-y-0.5 pl-4">
+                            <ul className="mb-2 list-disc space-y-1 pl-5">
                               {children}
                             </ul>
                           ),
                           ol: ({ children }) => (
-                            <ol className="mb-2 list-decimal space-y-0.5 pl-4">
+                            <ol className="mb-2 list-decimal space-y-1 pl-5">
                               {children}
                             </ol>
+                          ),
+                          li: ({ children }) => (
+                            <li className="break-words pl-0.5">{children}</li>
+                          ),
+                          a: ({ children, href }) => (
+                            <a
+                              className="break-all text-primary hover:underline"
+                              href={href}
+                              rel="noopener noreferrer"
+                              target="_blank"
+                            >
+                              {children}
+                            </a>
                           ),
                           strong: ({ children }) => (
                             <strong className="font-semibold">{children}</strong>
                           ),
                           code: ({ children }) => (
-                            <code className="rounded bg-muted px-1 py-0.5 text-xs">
+                            <code className="break-words rounded bg-muted px-1 py-0.5 text-xs">
                               {children}
                             </code>
                           ),
+                          pre: ({ children }) => (
+                            <pre className="my-2 max-w-full overflow-x-auto rounded-lg bg-muted p-3 text-xs leading-relaxed">
+                              {children}
+                            </pre>
+                          ),
                           table: ({ children }) => (
-                            <div className="my-2 overflow-x-auto rounded-lg border">
-                              <table className="w-full text-xs">
+                            <div className="my-2 max-w-full overflow-x-auto rounded-lg border">
+                              <table className="min-w-max w-full text-xs">
                                 {children}
                               </table>
                             </div>
                           ),
                           th: ({ children }) => (
-                            <th className="border-b bg-muted/50 px-3 py-1.5 text-left font-medium">
+                            <th className="whitespace-nowrap border-b bg-muted/50 px-2 py-1.5 text-left font-medium sm:px-3">
                               {children}
                             </th>
                           ),
                           td: ({ children }) => (
-                            <td className="border-b px-3 py-1.5">
+                            <td className="whitespace-nowrap border-b px-2 py-1.5 sm:px-3">
                               {children}
                             </td>
                           ),
@@ -204,10 +222,10 @@ export function Message({
               ) {
                 if (!isLoading) {
                   return (
-                    <div
-                      key={key}
-                      className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
-                    >
+                  <div
+                    key={key}
+                    className="flex max-w-full items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
+                  >
                       <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
                       <span>
                         {getToolLabel(toolName)}
@@ -220,7 +238,7 @@ export function Message({
                 return (
                   <div
                     key={key}
-                    className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
+                    className="flex max-w-full items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
                   >
                     <Loader2 className="size-3.5 animate-spin" />
                     <span>{getToolLabel(toolName)}</span>
@@ -231,7 +249,7 @@ export function Message({
               if (part.state === 'output-available') {
                 const toolResult = <ToolResult toolName={toolName} result={part.output} />;
                 return (
-                  <div key={key} className="space-y-2">
+                  <div key={key} className="max-w-full space-y-2">
                     <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <CheckCircle2 className="size-3 text-emerald-500" />
                       <span>{getToolCompletedLabel(toolName)}</span>
@@ -245,7 +263,7 @@ export function Message({
                 return (
                   <div
                     key={key}
-                    className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+                    className="max-w-full break-words rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
                   >
                     ⚠️ {getToolLabel(toolName)} 出错: {part.errorText}
                   </div>
@@ -292,7 +310,7 @@ function ReasoningBlock({
   return (
     <details
       open={isStreaming}
-      className="group overflow-hidden rounded-lg border bg-muted/30 text-xs text-muted-foreground"
+      className="group max-w-full overflow-hidden rounded-lg border bg-muted/30 text-xs text-muted-foreground"
     >
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 outline-none transition-colors hover:bg-muted/50 [&::-webkit-details-marker]:hidden">
         <Brain
@@ -307,7 +325,7 @@ function ReasoningBlock({
         <ChevronDown className="size-3.5 shrink-0 transition-transform group-open:rotate-180" />
       </summary>
       <div className="border-t px-3 pb-3 pt-2 leading-relaxed">
-        <pre className="whitespace-pre-wrap font-sans">{text}</pre>
+        <pre className="max-w-full whitespace-pre-wrap break-words font-sans">{text}</pre>
       </div>
     </details>
   );
@@ -374,7 +392,7 @@ function ToolResult({
   switch (toolName) {
     case 'searchDeals':
       return result?.deals ? (
-        <div className="space-y-2">
+        <div className="min-w-0 space-y-2">
           <p className="text-xs text-muted-foreground">
             {result.count > 0
               ? `找到 ${result.count} 个匹配航次`
@@ -393,7 +411,7 @@ function ToolResult({
 
     case 'getTopPriceDrops':
       return (result?.deals || result?.drops) ? (
-        <div className="space-y-2">
+        <div className="min-w-0 space-y-2">
           <div className="flex items-center gap-1.5 text-xs font-medium text-destructive">
             <TrendingDown className="size-3.5" />
             <span>降价排行 · 共 {(result.deals || result.drops).length} 条</span>
@@ -449,14 +467,14 @@ function ToolResult({
 
 function TrackingOverviewCard({ data }: { data: any }) {
   return (
-    <div className="rounded-xl border bg-card p-4">
+    <div className="max-w-full overflow-hidden rounded-xl border bg-card p-3 sm:p-4">
       <div className="mb-3 flex items-center gap-2">
         <BarChart3 className="size-4 text-primary" />
         <span className="text-sm font-semibold text-card-foreground">
           价格追踪概览
         </span>
       </div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
         <StatItem label="追踪航线" value={data.trackedDeals} />
         <StatItem label="价格快照" value={data.totalSnapshots} />
         <StatItem label="有变动" value={data.changedDeals} />
@@ -521,7 +539,7 @@ function TrendBadge({
   };
   return (
     <span
-      className={cn('rounded-full px-2.5 py-0.5 text-xs font-medium', colorMap[color])}
+      className={cn('inline-flex max-w-full rounded-full px-2.5 py-0.5 text-xs font-medium', colorMap[color])}
     >
       {label} {count}
     </span>

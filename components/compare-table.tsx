@@ -62,52 +62,106 @@ export function CompareTable({ data }: { data: CompareData }) {
   const minPrice = Math.min(...data.deals.map((d) => d.price));
 
   return (
-    <div className="rounded-xl border bg-card overflow-x-auto">
-      <div className="flex items-center gap-2 p-3 border-b">
-        <ArrowRightLeft className="w-4 h-4 text-primary" />
-        <span className="text-sm font-semibold text-card-foreground">航线对比</span>
-      </div>
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="bg-muted/50">
-            <th className="text-left p-2 text-muted-foreground font-medium w-24">
-              项目
-            </th>
-            {data.deals.map((deal) => (
-              <th
-                key={deal.id}
-                className="text-left p-2 text-card-foreground font-medium"
-              >
-                <div className="flex items-center gap-1">
-                  <Ship className="w-3.5 h-3.5 text-primary" />
-                  <span className="truncate max-w-[120px]">
+    <>
+      <div className="space-y-2 sm:hidden">
+        <div className="flex items-center gap-2 px-1 text-sm font-semibold text-card-foreground">
+          <ArrowRightLeft className="size-4 text-primary" />
+          <span>航线对比</span>
+        </div>
+        {data.deals.map((deal) => {
+          const isLowestPrice = deal.price === minPrice;
+
+          return (
+            <div
+              key={deal.id}
+              className="max-w-full overflow-hidden rounded-xl border bg-card p-3"
+            >
+              <div className="mb-2 flex min-w-0 items-start gap-2">
+                <Ship className="mt-0.5 size-4 shrink-0 text-primary" />
+                <div className="min-w-0">
+                  <div className="break-words text-sm font-semibold leading-snug text-card-foreground">
                     {deal.dealName}
-                  </span>
+                  </div>
+                  {deal.brand && (
+                    <div className="mt-0.5 break-words text-xs text-muted-foreground">
+                      {deal.brand}
+                    </div>
+                  )}
                 </div>
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.key} className="border-t">
-              <td className="p-2 text-muted-foreground font-medium">{row.label}</td>
-              {data.deals.map((deal) => (
-                <td
-                  key={deal.id}
-                  className={
-                    row.key === 'price' && deal.price === minPrice
-                      ? 'p-2 text-green-600 dark:text-green-400 font-bold'
-                      : 'p-2 text-card-foreground'
-                  }
-                >
-                  {formatValue(deal, row.key)}
-                </td>
+              </div>
+              <div className="divide-y text-xs">
+                {rows.map((row) => (
+                  <div
+                    key={row.key}
+                    className="grid grid-cols-[5rem_minmax(0,1fr)] gap-2 py-2"
+                  >
+                    <span className="text-muted-foreground">{row.label}</span>
+                    <span
+                      className={
+                        row.key === 'price' && isLowestPrice
+                          ? 'break-words font-bold text-green-600 dark:text-green-400'
+                          : 'break-words text-card-foreground'
+                      }
+                    >
+                      {formatValue(deal, row.key)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="hidden overflow-hidden rounded-xl border bg-card sm:block">
+        <div className="flex items-center gap-2 border-b p-3">
+          <ArrowRightLeft className="size-4 text-primary" />
+          <span className="text-sm font-semibold text-card-foreground">航线对比</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-[640px] w-full text-sm">
+            <thead>
+              <tr className="bg-muted/50">
+                <th className="w-24 p-2 text-left font-medium text-muted-foreground">
+                  项目
+                </th>
+                {data.deals.map((deal) => (
+                  <th
+                    key={deal.id}
+                    className="min-w-40 p-2 text-left font-medium text-card-foreground"
+                  >
+                    <div className="flex min-w-0 items-center gap-1">
+                      <Ship className="size-3.5 shrink-0 text-primary" />
+                      <span className="truncate">
+                        {deal.dealName}
+                      </span>
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.key} className="border-t">
+                  <td className="p-2 font-medium text-muted-foreground">{row.label}</td>
+                  {data.deals.map((deal) => (
+                    <td
+                      key={deal.id}
+                      className={
+                        row.key === 'price' && deal.price === minPrice
+                          ? 'p-2 font-bold text-green-600 dark:text-green-400'
+                          : 'p-2 text-card-foreground'
+                      }
+                    >
+                      {formatValue(deal, row.key)}
+                    </td>
+                  ))}
+                </tr>
               ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
   );
 }

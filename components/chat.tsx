@@ -285,24 +285,24 @@ export function Chat({ id, initialMessages }: ChatProps) {
   };
 
   return (
-    <div className="flex h-dvh min-w-0 flex-col bg-background">
+    <div className="flex h-dvh min-w-0 overflow-hidden flex-col bg-background">
       {/* Header — Sidebar toggle + 新建对话 */}
       <ChatHeader />
 
       {/* Messages area */}
-      <div className="relative flex-1 bg-background">
+      <div className="relative min-h-0 flex-1 bg-background">
         <div
           ref={messagesContainerRef}
           onScroll={handleScroll}
           className="absolute inset-0 overflow-y-auto touch-pan-y"
         >
-          <div className="mx-auto flex min-w-0 max-w-3xl flex-col gap-1 px-2 py-4 md:px-4">
+          <div className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 px-1.5 py-3 sm:px-3 sm:py-4 md:px-4">
             {messages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center px-4 py-16">
+              <div className="flex flex-col items-center justify-center px-3 py-10 sm:px-4 sm:py-16">
                 <div className="mb-6 flex size-16 items-center justify-center rounded-2xl bg-primary/10">
                   <Ship className="size-8 text-primary" />
                 </div>
-                <h2 className="mb-2 text-xl font-semibold text-foreground">
+                <h2 className="mb-2 text-center text-xl font-semibold text-foreground">
                   你好！我是游速达邮轮顾问 🚢
                 </h2>
                 <p className="mb-8 max-w-md text-center text-sm text-muted-foreground">
@@ -357,7 +357,7 @@ export function Chat({ id, initialMessages }: ChatProps) {
       </div>
 
       {/* Input area */}
-      <div className="sticky bottom-0 z-10 mx-auto flex w-full max-w-3xl gap-2 border-t-0 bg-background px-2 pb-3 md:px-4 md:pb-4">
+      <div className="sticky bottom-0 z-10 mx-auto flex w-full max-w-3xl gap-2 border-t-0 bg-background px-2 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:px-3 md:px-4 md:pb-[calc(env(safe-area-inset-bottom)+1rem)]">
         <div className="w-full overflow-hidden rounded-xl border bg-background shadow-xs">
           <textarea
             ref={textareaRef}
@@ -431,7 +431,7 @@ function ChatModeSelector({
           align="start"
           side="top"
           sideOffset={8}
-          className="z-50 w-64 rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg"
+          className="z-50 w-[min(16rem,calc(100vw-1rem))] rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg"
         >
           {CHAT_MODES.map((item) => (
             <DropdownMenu.Item
@@ -463,8 +463,8 @@ function ChatModeSelector({
 
 function AssistantPendingIndicator() {
   return (
-    <div className="flex items-start gap-2 px-4 py-3 md:gap-3">
-      <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-background ring-1 ring-border">
+    <div className="flex items-start gap-2 px-2 py-3 sm:px-3 md:gap-3 md:px-4">
+      <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-background ring-1 ring-border sm:size-8">
         <Ship className="size-4 text-primary" />
       </div>
       <div className="flex items-center gap-2 pt-2 text-xs text-muted-foreground">

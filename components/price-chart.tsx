@@ -39,70 +39,80 @@ export function PriceChart({ chart }: { chart: ChartData }) {
   }
 
   return (
-    <div className="rounded-xl border bg-card p-4">
-      <h4 className="text-sm font-semibold text-card-foreground mb-3">
+    <div className="max-w-full overflow-hidden rounded-xl border bg-card p-3 sm:p-4">
+      <h4 className="mb-3 break-words text-sm font-semibold text-card-foreground">
         📊 {chart.title}
       </h4>
-      <div className="w-full h-64">
-        {chart.chartType === 'scatter' ? (
-          <ResponsiveContainer width="100%" height="100%">
-            <ScatterChart margin={{ top: 10, right: 20, bottom: 20, left: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis
-                dataKey="duration_days"
-                name="天数"
-                type="number"
-                fontSize={12}
-              />
-              <YAxis dataKey="price" name="价格" fontSize={12} />
-              <Tooltip
-                formatter={(value, name) => [
-                  `$${Number(value).toLocaleString()}`,
-                  name === 'price' ? '价格' : String(name),
-                ]}
-              />
-              <Scatter name="航线" data={chart.data} fill="#3b82f6">
-                {chart.data.map((_, idx) => (
-                  <Cell
-                    key={idx}
+      <div className="max-w-full overflow-x-auto">
+        <div className="h-56 min-w-[320px] sm:h-64 sm:min-w-0">
+          {chart.chartType === 'scatter' ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <ScatterChart margin={{ top: 10, right: 8, bottom: 24, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="duration_days"
+                  name="天数"
+                  type="number"
+                  fontSize={12}
+                />
+                <YAxis dataKey="price" name="价格" fontSize={12} width={52} />
+                <Tooltip
+                  formatter={(value, name) => [
+                    `$${Number(value).toLocaleString()}`,
+                    name === 'price' ? '价格' : String(name),
+                  ]}
+                />
+                <Scatter name="航线" data={chart.data} fill="#3b82f6">
+                  {chart.data.map((_, idx) => (
+                    <Cell
+                      key={idx}
+                      fill={COLORS[idx % COLORS.length]}
+                      opacity={0.7}
+                    />
+                  ))}
+                </Scatter>
+              </ScatterChart>
+            </ResponsiveContainer>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={chart.data}
+                margin={{ top: 10, right: 8, bottom: 28, left: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  dataKey={getXAxisKey(chart.data)}
+                  fontSize={12}
+                  height={48}
+                  interval={0}
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={truncateTick}
+                  angle={-30}
+                  textAnchor="end"
+                />
+                <YAxis fontSize={12} width={52} />
+                <Tooltip />
+                <Legend />
+                {getBarKeys(chart.data).map((key, idx) => (
+                  <Bar
+                    key={key}
+                    dataKey={key}
                     fill={COLORS[idx % COLORS.length]}
-                    opacity={0.7}
+                    radius={[4, 4, 0, 0]}
                   />
                 ))}
-              </Scatter>
-            </ScatterChart>
-          </ResponsiveContainer>
-        ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={chart.data}
-              margin={{ top: 10, right: 20, bottom: 20, left: 20 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis
-                dataKey={getXAxisKey(chart.data)}
-                fontSize={12}
-                tick={{ fontSize: 11 }}
-                angle={-30}
-                textAnchor="end"
-              />
-              <YAxis fontSize={12} />
-              <Tooltip />
-              <Legend />
-              {getBarKeys(chart.data).map((key, idx) => (
-                <Bar
-                  key={key}
-                  dataKey={key}
-                  fill={COLORS[idx % COLORS.length]}
-                  radius={[4, 4, 0, 0]}
-                />
-              ))}
-            </BarChart>
-          </ResponsiveContainer>
-        )}
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
       </div>
     </div>
   );
+}
+
+function truncateTick(value: unknown): string {
+  const label = String(value ?? '');
+  return label.length > 8 ? `${label.slice(0, 8)}…` : label;
 }
 
 function getXAxisKey(data: Record<string, unknown>[]): string {
