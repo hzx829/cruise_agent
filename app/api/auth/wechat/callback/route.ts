@@ -25,14 +25,15 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const code = url.searchParams.get('code');
   const stateValue = url.searchParams.get('state');
+
+  if (!code) {
+    return redirectToLogin(url.origin, 'missing_code');
+  }
+
   const state = consumeOAuthState(WECHAT_PROVIDER, stateValue);
 
   if (!state) {
     return redirectToLogin(url.origin, 'invalid_state');
-  }
-
-  if (!code) {
-    return redirectToLogin(url.origin, 'missing_code', state.next_path);
   }
 
   try {

@@ -168,9 +168,10 @@ body {
 }
 
 .wechat-qr-frame iframe {
+  display: block !important;
   width: 300px !important;
   height: 400px !important;
   border: 0 !important;
-  transform: scale(0.64);
+  transform: scale(var(--wechat-qr-scale, 0.733333));
   transform-origin: top center;
 }

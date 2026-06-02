@@ -130,7 +130,7 @@ export function WeChatQrLogin({
 
   return (
     <div className="flex flex-col items-center">
-      <div className="relative flex size-48 items-center justify-center overflow-hidden bg-white">
+      <div className="relative flex h-[294px] w-[220px] items-start justify-center overflow-visible bg-white max-sm:h-[272px] max-sm:w-[204px]">
         {status === 'loading' && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-white text-[#7c8798]">
             <Loader2 className="size-6 animate-spin text-[#2d64db]" />
@@ -155,7 +155,7 @@ export function WeChatQrLogin({
         )}
         <div
           id={containerId}
-          className="wechat-qr-frame flex size-full items-center justify-center"
+          className="wechat-qr-frame flex h-full w-full items-start justify-center [--wechat-qr-scale:0.733333] max-sm:[--wechat-qr-scale:0.68]"
         />
       </div>
       <p className="mt-3 text-sm text-[#4f5b6d]">使用微信扫码登录</p>
