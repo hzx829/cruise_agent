@@ -14,6 +14,11 @@ import {
   WECHAT_PROVIDER,
 } from '@/lib/auth/wechat';
 
+function getAppOrigin(req: Request): string {
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, '');
+  return new URL(req.url).origin;
+}
+
 function redirectToLogin(origin: string, error: string, nextPath = '/chat') {
   const redirectUrl = new URL('/login', origin);
   redirectUrl.searchParams.set('error', error);
@@ -23,17 +28,18 @@ function redirectToLogin(origin: string, error: string, nextPath = '/chat') {
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
+  const appOrigin = getAppOrigin(req);
   const code = url.searchParams.get('code');
   const stateValue = url.searchParams.get('state');
 
   if (!code) {
-    return redirectToLogin(url.origin, 'missing_code');
+    return redirectToLogin(appOrigin, 'missing_code');
   }
 
   const state = consumeOAuthState(WECHAT_PROVIDER, stateValue);
 
   if (!state) {
-    return redirectToLogin(url.origin, 'invalid_state');
+    return redirectToLogin(appOrigin, 'invalid_state');
   }
 
   try {
@@ -49,12 +55,12 @@ export async function GET(req: Request) {
 
     const session = createSessionForUser(user.id);
     const response = NextResponse.redirect(
-      new URL(sanitizeNextPath(state.next_path), url.origin),
+      new URL(sanitizeNextPath(state.next_path), appOrigin),
     );
     response.headers.append('Set-Cookie', getSessionSetCookieHeader(session));
     return response;
   } catch (error) {
     console.error('[auth:wechat] callback failed', error);
-    return redirectToLogin(url.origin, 'wechat_callback_failed', state.next_path);
+    return redirectToLogin(appOrigin, 'wechat_callback_failed', state.next_path);
   }
 }
