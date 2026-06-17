@@ -65,7 +65,7 @@ const Database = requireFromRepo('better-sqlite3');
     '-o', 'StrictHostKeyChecking=accept-new',
     '-p', "$ServerPort",
     $target,
-    "mv '$remoteTmp' '$RemoteDb' && chmod 644 '$RemoteDb' && ls -lh '$RemoteDb'"
+    "mv '$remoteTmp' '$RemoteDb' && chmod 644 '$RemoteDb'; systemctl restart cruise-crawler-web.service >/dev/null 2>&1 || true; if command -v pm2 >/dev/null 2>&1; then pm2 restart cruise_agent >/dev/null 2>&1 || true; fi; ls -lh '$RemoteDb'"
   )
 } finally {
   if (Test-Path -LiteralPath $stageDir) {
