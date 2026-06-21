@@ -15,6 +15,7 @@ export interface AuthUser {
   role: string;
   status: string;
   isAnonymous: boolean;
+  defaultDepartureLocation: string | null;
   createdAt: string;
   updatedAt: string | null;
 }
@@ -28,6 +29,7 @@ interface UserRow {
   role: string;
   status: string;
   is_anonymous: number;
+  default_departure_location: string | null;
   created_at: string;
   updated_at: string | null;
 }
@@ -159,6 +161,7 @@ export function mapUser(row: UserRow): AuthUser {
     role: row.role,
     status: row.status,
     isAnonymous: Boolean(row.is_anonymous),
+    defaultDepartureLocation: row.default_departure_location,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -368,5 +371,6 @@ export function toPublicUser(user: AuthUser) {
     avatarUrl: user.avatarUrl,
     role: user.role,
     isAnonymous: user.isAnonymous,
+    defaultDepartureLocation: user.defaultDepartureLocation,
   };
 }

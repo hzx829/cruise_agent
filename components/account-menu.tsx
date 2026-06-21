@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import useSWR from 'swr';
 import * as Popover from '@radix-ui/react-popover';
 import { LogIn, LogOut, UserCircle } from 'lucide-react';
@@ -16,6 +17,7 @@ interface AuthMe {
     avatarUrl: string | null;
     role: string;
     isAnonymous: boolean;
+    defaultDepartureLocation: string | null;
   } | null;
 }
 
@@ -32,12 +34,32 @@ export function AccountMenu() {
   const { data, mutate, isLoading } = useSWR<AuthMe>('/api/auth/me', fetcher, {
     revalidateOnFocus: false,
   });
+  const [defaultDepartureLocation, setDefaultDepartureLocation] = useState('');
+  const [isSavingLocation, setIsSavingLocation] = useState(false);
+
+  useEffect(() => {
+    setDefaultDepartureLocation(data?.user?.defaultDepartureLocation ?? '');
+  }, [data?.user?.defaultDepartureLocation]);
 
   const handleLogout = async () => {
     await fetchWithAuthRedirect('/api/auth/logout', { method: 'POST' });
     await mutate();
     router.push(getLoginUrl('/chat'));
     router.refresh();
+  };
+
+  const handleSaveLocation = async () => {
+    setIsSavingLocation(true);
+    try {
+      await fetchWithAuthRedirect('/api/user/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ defaultDepartureLocation }),
+      });
+      await mutate();
+    } finally {
+      setIsSavingLocation(false);
+    }
   };
 
   if (isLoading || !data) {
@@ -113,6 +135,27 @@ export function AccountMenu() {
             <LogOut className="size-4" />
             <span>退出登录</span>
           </button>
+          <div className="mt-2 border-t px-2 pt-3">
+            <label className="text-xs font-medium text-muted-foreground">
+              常用出发地
+            </label>
+            <div className="mt-1 flex gap-2">
+              <input
+                value={defaultDepartureLocation}
+                onChange={(event) => setDefaultDepartureLocation(event.target.value)}
+                placeholder="例如 成都 / 四川"
+                className="min-w-0 flex-1 rounded-md border bg-background px-2 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              <button
+                type="button"
+                onClick={handleSaveLocation}
+                disabled={isSavingLocation}
+                className="rounded-md bg-primary px-2.5 py-1.5 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                保存
+              </button>
+            </div>
+          </div>
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

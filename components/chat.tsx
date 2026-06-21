@@ -21,6 +21,7 @@ import {
   Ship,
   ArrowDown,
   Zap,
+  MapPin,
 } from 'lucide-react';
 import { useSWRConfig } from 'swr';
 import { unstable_serialize } from 'swr/infinite';
@@ -150,6 +151,19 @@ interface ChatProps {
 
 type MessagePart = UIMessage['parts'][number];
 
+interface BrowserLocation {
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  city: string | null;
+  region: string | null;
+  country: string | null;
+  countryCode: string | null;
+  timezone: string | null;
+}
+
+const BROWSER_LOCATION_STORAGE_KEY = 'cruise-agent-browser-location';
+
 function getPartState(part: MessagePart | undefined): string | undefined {
   if (!part || !('state' in part)) return undefined;
   return typeof part.state === 'string' ? part.state : undefined;
@@ -208,6 +222,8 @@ export function Chat({ id, initialMessages }: ChatProps) {
   }, [id, messages.length, status, chatId]);
 
   const [input, setInput] = useState('');
+  const [browserLocation, setBrowserLocation] = useState<BrowserLocation | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -255,6 +271,15 @@ export function Chat({ id, initialMessages }: ChatProps) {
     setStoredChatMode(value);
   }, []);
 
+  useEffect(() => {
+    try {
+      const stored = window.sessionStorage.getItem(BROWSER_LOCATION_STORAGE_KEY);
+      if (stored) setBrowserLocation(JSON.parse(stored) as BrowserLocation);
+    } catch {
+      // Ignore unavailable storage or malformed cached values.
+    }
+  }, []);
+
   // Auto-resize textarea
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -263,12 +288,79 @@ export function Chat({ id, initialMessages }: ChatProps) {
     textarea.style.height = `${Math.min(textarea.scrollHeight, 164)}px`;
   }, [input]);
 
+  const requestBrowserLocation = useCallback(() => {
+    if (isLoading || isLocating || typeof navigator === 'undefined') return;
+    if (!navigator.geolocation) return;
+
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const timezone =
+          Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+        const baseLocation: BrowserLocation = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: Number.isFinite(position.coords.accuracy)
+            ? Math.round(position.coords.accuracy)
+            : null,
+          city: null,
+          region: null,
+          country: null,
+          countryCode: null,
+          timezone,
+        };
+
+        let nextLocation = baseLocation;
+        try {
+          const response = await fetchWithAuthRedirect('/api/location/reverse', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              latitude: baseLocation.latitude,
+              longitude: baseLocation.longitude,
+            }),
+          });
+          if (response.ok) {
+            const data = await response.json();
+            nextLocation = {
+              ...baseLocation,
+              ...(data.location ?? {}),
+              timezone,
+            };
+          }
+        } catch {
+          // Coordinates and timezone are still useful when reverse geocoding fails.
+        }
+
+        setBrowserLocation(nextLocation);
+        try {
+          window.sessionStorage.setItem(
+            BROWSER_LOCATION_STORAGE_KEY,
+            JSON.stringify(nextLocation),
+          );
+        } catch {
+          // Ignore storage failures.
+        } finally {
+          setIsLocating(false);
+        }
+      },
+      () => {
+        setIsLocating(false);
+      },
+      {
+        enableHighAccuracy: false,
+        maximumAge: 10 * 60 * 1000,
+        timeout: 8_000,
+      },
+    );
+  }, [isLoading, isLocating]);
+
   const handleSubmit = (text?: string) => {
     const msg = text || input.trim();
     if (!msg || isLoading) return;
     sendMessage(
       { text: msg },
-      { body: { responseMode: chatMode, thinkingEnabled } },
+      { body: { responseMode: chatMode, thinkingEnabled, browserLocation } },
     );
     setInput('');
     // Reset textarea height
@@ -371,11 +463,27 @@ export function Chat({ id, initialMessages }: ChatProps) {
             rows={1}
           />
           <div className="flex items-center justify-between p-1">
-            <ChatModeSelector
-              disabled={isLoading}
-              mode={chatMode}
-              onChange={selectChatMode}
-            />
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={requestBrowserLocation}
+                disabled={isLoading || isLocating}
+                aria-label={browserLocation ? '已使用当前位置' : '使用当前位置'}
+                title={browserLocation ? '已使用当前位置' : '使用当前位置'}
+                className={`flex size-8 items-center justify-center rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                  browserLocation
+                    ? 'bg-primary/10 text-primary hover:bg-primary/15'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                }`}
+              >
+                <MapPin className="size-4" />
+              </button>
+              <ChatModeSelector
+                disabled={isLoading}
+                mode={chatMode}
+                onChange={selectChatMode}
+              />
+            </div>
             {isLoading ? (
               <button
                 onClick={() => stop()}

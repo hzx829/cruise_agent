@@ -18,6 +18,7 @@ interface UserRow {
   role: string;
   status: string;
   is_anonymous: number;
+  default_departure_location: string | null;
   created_at: string;
   updated_at: string | null;
 }

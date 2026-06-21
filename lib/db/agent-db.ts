@@ -248,6 +248,7 @@ function columnExists(tableName: string, columnName: string): boolean {
 
 function ensureColumn(
   tableName:
+    | 'users'
     | 'chats'
     | 'notifications'
     | 'agent_runs'
@@ -270,6 +271,7 @@ function ensureColumn(
   }
 }
 
+ensureColumn('users', 'default_departure_location', 'TEXT');
 ensureColumn('chats', 'owner_user_id', 'TEXT REFERENCES users(id) ON DELETE SET NULL');
 ensureColumn(
   'notifications',
