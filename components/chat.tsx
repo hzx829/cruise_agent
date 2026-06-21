@@ -21,7 +21,6 @@ import {
   Ship,
   ArrowDown,
   Zap,
-  MapPin,
 } from 'lucide-react';
 import { useSWRConfig } from 'swr';
 import { unstable_serialize } from 'swr/infinite';
@@ -163,6 +162,18 @@ interface BrowserLocation {
 }
 
 const BROWSER_LOCATION_STORAGE_KEY = 'cruise-agent-browser-location';
+const BROWSER_LOCATION_REQUESTED_KEY = 'cruise-agent-browser-location-requested';
+
+function getStoredBrowserLocation(): BrowserLocation | null {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const stored = window.sessionStorage.getItem(BROWSER_LOCATION_STORAGE_KEY);
+    return stored ? (JSON.parse(stored) as BrowserLocation) : null;
+  } catch {
+    return null;
+  }
+}
 
 function getPartState(part: MessagePart | undefined): string | undefined {
   if (!part || !('state' in part)) return undefined;
@@ -222,8 +233,10 @@ export function Chat({ id, initialMessages }: ChatProps) {
   }, [id, messages.length, status, chatId]);
 
   const [input, setInput] = useState('');
-  const [browserLocation, setBrowserLocation] = useState<BrowserLocation | null>(null);
-  const [isLocating, setIsLocating] = useState(false);
+  const [browserLocation, setBrowserLocation] = useState<BrowserLocation | null>(
+    () => getStoredBrowserLocation(),
+  );
+  const locationRequestStarted = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -271,15 +284,6 @@ export function Chat({ id, initialMessages }: ChatProps) {
     setStoredChatMode(value);
   }, []);
 
-  useEffect(() => {
-    try {
-      const stored = window.sessionStorage.getItem(BROWSER_LOCATION_STORAGE_KEY);
-      if (stored) setBrowserLocation(JSON.parse(stored) as BrowserLocation);
-    } catch {
-      // Ignore unavailable storage or malformed cached values.
-    }
-  }, []);
-
   // Auto-resize textarea
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -289,10 +293,10 @@ export function Chat({ id, initialMessages }: ChatProps) {
   }, [input]);
 
   const requestBrowserLocation = useCallback(() => {
-    if (isLoading || isLocating || typeof navigator === 'undefined') return;
+    if (locationRequestStarted.current || typeof navigator === 'undefined') return;
     if (!navigator.geolocation) return;
 
-    setIsLocating(true);
+    locationRequestStarted.current = true;
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const timezone =
@@ -340,20 +344,29 @@ export function Chat({ id, initialMessages }: ChatProps) {
           );
         } catch {
           // Ignore storage failures.
-        } finally {
-          setIsLocating(false);
         }
       },
-      () => {
-        setIsLocating(false);
-      },
+      () => {},
       {
         enableHighAccuracy: false,
         maximumAge: 10 * 60 * 1000,
         timeout: 8_000,
       },
     );
-  }, [isLoading, isLocating]);
+  }, []);
+
+  useEffect(() => {
+    if (browserLocation) return;
+
+    try {
+      if (window.sessionStorage.getItem(BROWSER_LOCATION_REQUESTED_KEY)) return;
+      window.sessionStorage.setItem(BROWSER_LOCATION_REQUESTED_KEY, '1');
+    } catch {
+      // If storage is unavailable, still make one best-effort request.
+    }
+
+    requestBrowserLocation();
+  }, [browserLocation, requestBrowserLocation]);
 
   const handleSubmit = (text?: string) => {
     const msg = text || input.trim();
@@ -463,27 +476,11 @@ export function Chat({ id, initialMessages }: ChatProps) {
             rows={1}
           />
           <div className="flex items-center justify-between p-1">
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={requestBrowserLocation}
-                disabled={isLoading || isLocating}
-                aria-label={browserLocation ? '已使用当前位置' : '使用当前位置'}
-                title={browserLocation ? '已使用当前位置' : '使用当前位置'}
-                className={`flex size-8 items-center justify-center rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                  browserLocation
-                    ? 'bg-primary/10 text-primary hover:bg-primary/15'
-                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                }`}
-              >
-                <MapPin className="size-4" />
-              </button>
-              <ChatModeSelector
-                disabled={isLoading}
-                mode={chatMode}
-                onChange={selectChatMode}
-              />
-            </div>
+            <ChatModeSelector
+              disabled={isLoading}
+              mode={chatMode}
+              onChange={selectChatMode}
+            />
             {isLoading ? (
               <button
                 onClick={() => stop()}
