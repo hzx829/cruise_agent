@@ -22,6 +22,7 @@ import {
   hasRenderableContent,
 } from '@/lib/ai/message-content';
 import { getActivePromptTemplate } from '@/lib/ai/prompt-store';
+import { getChatRequestContext } from '@/lib/ai/request-context';
 import { loadChat, saveMessages, updateChatTitle, createChat } from '@/lib/db/chat-store';
 import {
   createAgentRun,
@@ -167,6 +168,7 @@ export async function POST(req: Request) {
   }: { message: UIMessage; id: string; thinkingEnabled?: unknown } =
     await req.json();
   const thinkingEnabled = resolveThinkingEnabled(rawThinkingEnabled);
+  const requestContext = getChatRequestContext(req);
 
   // 从 DB 加载历史消息；若 chat 不存在则首次创建
   let previousMessages: UIMessage[] = [];
@@ -312,6 +314,7 @@ export async function POST(req: Request) {
 
   const agent = createCruiseAgent(getModel({ thinkingEnabled }), {
     intentContext,
+    requestContext,
     promptTemplate: activePrompt.content,
     onStepStart: (event) => {
       stepStarts.set(event.stepNumber, Date.now());

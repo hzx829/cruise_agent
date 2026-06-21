@@ -12,6 +12,10 @@ import {
   type CruiseIntentContext,
 } from './intent';
 import {
+  formatRequestContextForPrompt,
+  type ChatRequestContext,
+} from './request-context';
+import {
   searchDeals,
   getTopPriceDrops,
   getPriceHistory,
@@ -123,6 +127,7 @@ const FINAL_ANSWER_INSTRUCTIONS = `## 最终回答收束要求
 
 interface CreateCruiseAgentOptions {
   intentContext?: CruiseIntentContext;
+  requestContext?: ChatRequestContext;
   promptTemplate?: string;
   onFinish?: ToolLoopAgentOnFinishCallback<typeof cruiseTools>;
   onStepStart?: ToolLoopAgentOnStepStartCallback<typeof cruiseTools>;
@@ -252,12 +257,17 @@ function chooseActiveTools(
 
 function buildInstructions(
   intentContext?: CruiseIntentContext,
+  requestContext?: ChatRequestContext,
   promptTemplate?: string,
 ): string {
   const basePrompt = buildSystemPrompt(promptTemplate);
-  return intentContext
-    ? `${basePrompt}\n\n${formatIntentContextForPrompt(intentContext)}`
-    : basePrompt;
+  return [
+    basePrompt,
+    formatRequestContextForPrompt(requestContext),
+    intentContext ? formatIntentContextForPrompt(intentContext) : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 type SearchDealsInput = Record<string, unknown> & {
@@ -435,6 +445,7 @@ export function createCruiseAgent(
 ) {
   const instructions = buildInstructions(
     options.intentContext,
+    options.requestContext,
     options.promptTemplate,
   );
 
