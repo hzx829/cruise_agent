@@ -168,7 +168,7 @@ export async function POST(req: Request) {
   }: { message: UIMessage; id: string; thinkingEnabled?: unknown } =
     await req.json();
   const thinkingEnabled = resolveThinkingEnabled(rawThinkingEnabled);
-  const requestContext = getChatRequestContext(req);
+  const requestContext = await getChatRequestContext(req);
 
   // 从 DB 加载历史消息；若 chat 不存在则首次创建
   let previousMessages: UIMessage[] = [];
