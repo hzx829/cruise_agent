@@ -16,10 +16,13 @@ import { detectCruiseIntent } from '@/lib/ai/intent';
 import {
   ABORTED_ASSISTANT_FALLBACK_TEXT,
   ERROR_ASSISTANT_FALLBACK_TEXT,
+  MALFORMED_TOOL_ASSISTANT_FALLBACK_TEXT,
   createFallbackAssistantMessage,
   ensureRenderableAssistantMessage,
+  hasAssistantTextContent,
   hasMalformedToolArtifact,
   hasRenderableContent,
+  sanitizeMessagesForAgent,
 } from '@/lib/ai/message-content';
 import { getActivePromptTemplate } from '@/lib/ai/prompt-store';
 import { getChatRequestContext } from '@/lib/ai/request-context';
@@ -31,6 +34,7 @@ import {
   updateAgentRun,
 } from '@/lib/db/agent-trace-store';
 import { getAuthenticatedRequestUser } from '@/lib/auth/session';
+import { chargeChatCredit, getCreditBalance } from '@/lib/db/billing-store';
 
 export const maxDuration = 120;
 
@@ -39,6 +43,11 @@ const AGENT_STREAM_TIMEOUT = {
   stepMs: 45_000,
   chunkMs: 25_000,
 } as const;
+const AGENT_HISTORY_MESSAGE_LIMIT = 12;
+const AGENT_HISTORY_TOOL_PART_WINDOW = 4;
+
+type AgentRunStatus = 'completed' | 'error' | 'aborted';
+type MessagePart = UIMessage['parts'][number];
 
 function parseBoolean(value: unknown): boolean | undefined {
   if (typeof value === 'boolean') return value;
@@ -124,6 +133,73 @@ function sumAssistantTextLength(messages: UIMessage[]): number {
     .reduce((sum, msg) => sum + extractAllText(msg).trim().length, 0);
 }
 
+function isHeavyAssistantHistoryPart(part: MessagePart, keepToolParts: boolean): boolean {
+  if (part.type === 'reasoning' || part.type === 'step-start') return true;
+  return part.type.startsWith('tool-') && !keepToolParts;
+}
+
+function pruneAgentHistory(messages: UIMessage[]): UIMessage[] {
+  const recentMessages = messages.slice(-AGENT_HISTORY_MESSAGE_LIMIT);
+  const keepToolPartsFromIndex = Math.max(
+    0,
+    recentMessages.length - AGENT_HISTORY_TOOL_PART_WINDOW,
+  );
+
+  return recentMessages
+    .map((message, index) => {
+      if (message.role !== 'assistant') return message;
+
+      const keepToolParts = index >= keepToolPartsFromIndex;
+      const parts = message.parts.filter(
+        (part) => !isHeavyAssistantHistoryPart(part, keepToolParts),
+      );
+
+      return parts.length > 0 ? { ...message, parts } : null;
+    })
+    .filter((message): message is UIMessage => Boolean(message));
+}
+
+function hasAssistantText(messages: UIMessage[]): boolean {
+  return messages.some(
+    (message) => message.role === 'assistant' && hasAssistantTextContent(message),
+  );
+}
+
+function getTerminalFallbackText(input: {
+  isAborted: boolean;
+  finishReason?: string | null;
+  malformedToolArtifactCount: number;
+}): string {
+  if (input.isAborted) return ABORTED_ASSISTANT_FALLBACK_TEXT;
+  if (
+    input.malformedToolArtifactCount > 0 ||
+    input.finishReason === 'tool-calls' ||
+    input.finishReason === 'length'
+  ) {
+    return MALFORMED_TOOL_ASSISTANT_FALLBACK_TEXT;
+  }
+  return ERROR_ASSISTANT_FALLBACK_TEXT;
+}
+
+function getTerminalRunStatus(input: {
+  isAborted: boolean;
+  finishReason?: string | null;
+  malformedToolArtifactCount: number;
+  emptyAssistantCount: number;
+  hasAssistantText: boolean;
+}): AgentRunStatus {
+  if (input.isAborted) return 'aborted';
+  if (
+    input.finishReason !== 'stop' ||
+    input.malformedToolArtifactCount > 0 ||
+    input.emptyAssistantCount > 0 ||
+    !input.hasAssistantText
+  ) {
+    return 'error';
+  }
+  return 'completed';
+}
+
 function hashPrompt(content: string): string {
   return createHash('sha256').update(content).digest('hex');
 }
@@ -161,6 +237,17 @@ export async function POST(req: Request) {
     );
   }
 
+  if (getCreditBalance(user.id) <= 0) {
+    return NextResponse.json(
+      {
+        error: '额度不足',
+        paymentRequired: true,
+        billingUrl: '/billing',
+      },
+      { status: 402 },
+    );
+  }
+
   const {
     message,
     id,
@@ -186,10 +273,10 @@ export async function POST(req: Request) {
     createChat(user.id, id);
   }
   // 过滤掉 parts 为空的无效历史消息，避免 createAgentUIStreamResponse 报错
-  const validPreviousMessages = previousMessages.filter(
-    (m) => Array.isArray(m.parts) && m.parts.length > 0,
+  const agentPreviousMessages = pruneAgentHistory(
+    sanitizeMessagesForAgent(previousMessages),
   );
-  const allMessages = [...validPreviousMessages, message];
+  const allMessages = [...agentPreviousMessages, message];
 
   // 立即保存用户消息
   saveMessages(id, [message]);
@@ -366,7 +453,9 @@ export async function POST(req: Request) {
     },
   });
 
-  const response = await createAgentUIStreamResponse({
+  let response: Response;
+  try {
+    response = await createAgentUIStreamResponse({
     agent,
     uiMessages: allMessages,
     generateMessageId,
@@ -421,69 +510,81 @@ export async function POST(req: Request) {
         console.error('[agent-trace] failed to persist run error', persistError);
       }
 
-      if (!savedErrorFallback) {
-        try {
-          saveMessages(id, [
-            createFallbackAssistantMessage(
-              generateMessageId(),
-              ERROR_ASSISTANT_FALLBACK_TEXT,
-            ),
-          ]);
-          savedErrorFallback = true;
-        } catch (persistError) {
-          console.error('[agent-stream] failed to persist fallback', persistError);
-        }
-      }
-
       return ERROR_ASSISTANT_FALLBACK_TEXT;
     },
     onFinish: async ({ messages: finishedMessages, isAborted, finishReason }) => {
       // 找出 AI 回复的新消息并保存
       const existingIds = new Set(allMessages.map((m) => m.id));
       const newMessages = finishedMessages.filter((m) => !existingIds.has(m.id));
-      const fallbackText = isAborted
-        ? ABORTED_ASSISTANT_FALLBACK_TEXT
-        : undefined;
-      const messagesToSave = newMessages.map((msg) =>
-        ensureRenderableAssistantMessage(msg, fallbackText, {
-          appendFallbackText: isAborted,
-          dropIncompleteToolParts: isAborted,
-        }),
-      );
       const malformedToolArtifactCount = newMessages.filter(
         (msg) => msg.role === 'assistant' && hasMalformedToolArtifact(msg),
       ).length;
       const emptyAssistantCount = newMessages.filter(
         (msg) => msg.role === 'assistant' && !hasRenderableContent(msg),
       ).length;
+      const terminalStatus = getTerminalRunStatus({
+        isAborted,
+        finishReason,
+        malformedToolArtifactCount,
+        emptyAssistantCount,
+        hasAssistantText: hasAssistantText(newMessages),
+      });
+      const fallbackText =
+        terminalStatus === 'completed'
+          ? undefined
+          : getTerminalFallbackText({
+              isAborted,
+              finishReason,
+              malformedToolArtifactCount,
+            });
+      const messagesToSave =
+        newMessages.length > 0
+          ? newMessages.map((msg) =>
+              ensureRenderableAssistantMessage(msg, fallbackText, {
+                appendFallbackText: terminalStatus !== 'completed',
+                dropIncompleteToolParts: true,
+              }),
+            )
+          : terminalStatus === 'completed'
+            ? []
+            : [
+                createFallbackAssistantMessage(
+                  generateMessageId(),
+                  fallbackText ?? ERROR_ASSISTANT_FALLBACK_TEXT,
+                ),
+              ];
 
-      if (newMessages.length > 0) {
+      if (messagesToSave.length > 0) {
         saveMessages(id, messagesToSave);
       }
 
       try {
+        const assistantTextLen = sumAssistantTextLength(messagesToSave);
         const usageTokens = getUsageTokens(totalUsage);
         updateAgentRun({
           runId,
-          status: isAborted
-            ? 'aborted'
-            : malformedToolArtifactCount > 0
-              ? 'error'
-              : 'completed',
+          status: terminalStatus,
           endedAt: toIsoTime(Date.now()),
           durationMs: Date.now() - runStartedAt,
           finishReason: finishReason ?? null,
           isAborted,
-          assistantTextLen: sumAssistantTextLength(messagesToSave),
+          assistantTextLen,
           emptyAssistantCount,
           toolStepCount,
           toolResultCount,
           error:
-            malformedToolArtifactCount > 0
-              ? new Error('Model emitted malformed tool-call text artifact')
+            terminalStatus === 'error'
+              ? new Error(`Agent response incomplete: ${finishReason ?? 'unknown'}`)
               : undefined,
           ...usageTokens,
         });
+        if (terminalStatus === 'completed' && assistantTextLen > 0) {
+          chargeChatCredit({
+            userId: user.id,
+            runId,
+            note: latestUserText.slice(0, 120),
+          });
+        }
       } catch (persistError) {
         console.error('[agent-trace] failed to persist run finish', persistError);
       }
@@ -493,6 +594,7 @@ export async function POST(req: Request) {
         chatId: id,
         durationMs: Date.now() - runStartedAt,
         finishReason,
+        terminalStatus,
         isAborted,
         newMessageCount: newMessages.length,
         emptyAssistantCount,
@@ -508,5 +610,47 @@ export async function POST(req: Request) {
       }
     },
   });
+  } catch (error) {
+    flushOpenStepTimings('error');
+    console.error('[agent-stream] failed before response', {
+      runId,
+      chatId: id,
+      durationMs: Date.now() - runStartedAt,
+      error,
+    });
+
+    try {
+      updateAgentRun({
+        runId,
+        status: 'error',
+        endedAt: toIsoTime(Date.now()),
+        durationMs: Date.now() - runStartedAt,
+        toolStepCount,
+        toolResultCount,
+        error,
+      });
+    } catch (persistError) {
+      console.error('[agent-trace] failed to persist pre-response error', persistError);
+    }
+
+    if (!savedErrorFallback) {
+      try {
+        saveMessages(id, [
+          createFallbackAssistantMessage(
+            generateMessageId(),
+            ERROR_ASSISTANT_FALLBACK_TEXT,
+          ),
+        ]);
+        savedErrorFallback = true;
+      } catch (persistError) {
+        console.error('[agent-stream] failed to persist pre-response fallback', persistError);
+      }
+    }
+
+    return NextResponse.json(
+      { error: ERROR_ASSISTANT_FALLBACK_TEXT },
+      { status: 500 },
+    );
+  }
   return response;
 }

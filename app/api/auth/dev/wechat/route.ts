@@ -17,15 +17,23 @@ function firstForwardedHeaderValue(value: string | null): string | null {
 }
 
 function getPublicOrigin(req: Request): string {
-  if (process.env.APP_URL) {
-    return process.env.APP_URL.replace(/\/$/, '');
-  }
-
   const forwardedHost = firstForwardedHeaderValue(
     req.headers.get('x-forwarded-host'),
   );
   const host = forwardedHost || req.headers.get('host');
   if (!host) return new URL(req.url).origin;
+
+  if (
+    host.startsWith('localhost') ||
+    host.startsWith('127.0.0.1') ||
+    host.startsWith('[::1]')
+  ) {
+    return new URL(req.url).origin;
+  }
+
+  if (process.env.APP_URL) {
+    return process.env.APP_URL.replace(/\/$/, '');
+  }
 
   const forwardedProto = firstForwardedHeaderValue(
     req.headers.get('x-forwarded-proto'),

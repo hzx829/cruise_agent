@@ -1,7 +1,7 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import * as queries from '@/lib/db/queries';
-import { tierSchema, normalizeTier } from './schemas';
+import { coerceOptionalNumber, tierSchema, normalizeTier } from './schemas';
 
 type RouteStopOutput = {
   seq: number;
@@ -55,7 +55,7 @@ export const getTopPriceDrops = tool({
   inputSchema: z.object({
     tier: tierSchema,
     brand: z.string().optional().describe('品牌 ID 筛选'),
-    limit: z.number().optional().describe('返回数量，默认 15'),
+    limit: coerceOptionalNumber().describe('返回数量，默认 15'),
   }),
   execute: async (params) => {
     const tierArr = normalizeTier(params.tier);

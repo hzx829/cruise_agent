@@ -2,7 +2,19 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { MessageSquareText, Ship, Plus, Settings2 } from 'lucide-react';
+import { useState, type ComponentType } from 'react';
+import useSWR from 'swr';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import {
+  Bell,
+  MessageSquareText,
+  MoreHorizontal,
+  Ship,
+  Plus,
+  Settings2,
+  ShieldCheck,
+  WalletCards,
+} from 'lucide-react';
 
 import {
   Sidebar,
@@ -18,8 +30,32 @@ import { ThemeToggle } from './theme-toggle';
 import { NotificationBell } from './notification-bell';
 import { AccountMenu } from './account-menu';
 
+interface AuthMe {
+  authenticated: boolean;
+  user: {
+    role: string;
+  } | null;
+}
+
+const ADMIN_TOKEN_STORAGE_KEY = 'cruise_agent_admin_token';
+const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+function useShowAdminMenu(): boolean {
+  const { data } = useSWR<AuthMe>('/api/auth/me', fetcher, {
+    revalidateOnFocus: false,
+  });
+  const [hasStoredAdminToken] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      Boolean(window.localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY)),
+  );
+
+  return data?.user?.role === 'admin' || hasStoredAdminToken;
+}
+
 export function AppSidebar() {
   const router = useRouter();
+  const showAdminMenu = useShowAdminMenu();
 
   return (
     <Sidebar>
@@ -72,21 +108,18 @@ export function AppSidebar() {
             <AccountMenu />
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton tooltip="Prompt 管理" asChild>
-              <Link href="/admin/prompts">
-                <Settings2 />
-                <span>Prompt 管理</span>
+            <SidebarMenuButton tooltip="额度" asChild>
+              <Link href="/billing">
+                <WalletCards />
+                <span>额度</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton tooltip="用户 Sessions" asChild>
-              <Link href="/admin/sessions">
-                <MessageSquareText />
-                <span>用户 Sessions</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
+          {showAdminMenu && (
+            <SidebarMenuItem>
+              <AdminMenu />
+            </SidebarMenuItem>
+          )}
           <SidebarMenuItem>
             <NotificationBell />
           </SidebarMenuItem>
@@ -96,5 +129,58 @@ export function AppSidebar() {
         </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
+  );
+}
+
+function AdminMenu() {
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <SidebarMenuButton tooltip="管理">
+          <ShieldCheck />
+          <span>管理</span>
+          <MoreHorizontal className="ml-auto size-4 text-muted-foreground" />
+        </SidebarMenuButton>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          side="right"
+          align="end"
+          sideOffset={8}
+          className="z-50 w-52 rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg"
+        >
+          <AdminMenuItem href="/admin/prompts" icon={Settings2} label="Prompt" />
+          <AdminMenuItem href="/admin/billing" icon={WalletCards} label="计费" />
+          <AdminMenuItem
+            href="/admin/sessions"
+            icon={MessageSquareText}
+            label="Sessions"
+          />
+          <AdminMenuItem href="/admin/agent-traces" icon={Bell} label="Trace" />
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
+
+function AdminMenuItem({
+  href,
+  icon: Icon,
+  label,
+}: {
+  href: string;
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+}) {
+  return (
+    <DropdownMenu.Item asChild>
+      <Link
+        href={href}
+        className="flex items-center gap-2 rounded-md px-2 py-2 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+      >
+        <Icon className="size-4" />
+        <span>{label}</span>
+      </Link>
+    </DropdownMenu.Item>
   );
 }

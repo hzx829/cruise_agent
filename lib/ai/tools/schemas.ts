@@ -1,5 +1,50 @@
 import { z } from 'zod';
 
+function parseStringArray(value: string): unknown {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      return [trimmed];
+    }
+  }
+
+  return [trimmed];
+}
+
+export function coerceOptionalNumber() {
+  return z.preprocess((value) => {
+    if (value == null) return undefined;
+    if (typeof value === 'string' && value.trim() === '') return undefined;
+    return value;
+  }, z.coerce.number().optional());
+}
+
+export function stringListSchema(maxLength?: number) {
+  const listSchema = z.array(z.string()).transform((values) =>
+    values
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+  const constrainedSchema =
+    maxLength == null
+      ? listSchema
+      : listSchema.refine(
+          (values) => values.length <= maxLength,
+          `Expected at most ${maxLength} items`,
+        );
+
+  return z.preprocess((value) => {
+    if (value == null) return undefined;
+    if (typeof value === 'string') return parseStringArray(value);
+    return value;
+  }, constrainedSchema.optional());
+}
+
 /**
  * 品牌层级枚举
  */

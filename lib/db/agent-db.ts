@@ -122,6 +122,95 @@ agentDb.exec(`
   CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read);
   CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at);
 
+  CREATE TABLE IF NOT EXISTS billing_plans (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    amount_cents INTEGER NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'CNY',
+    quota_messages INTEGER NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  INSERT OR IGNORE INTO billing_plans
+    (id, name, description, amount_cents, currency, quota_messages, active, sort_order)
+  VALUES
+    ('starter_50', '体验包', '适合短期找船和比价', 1900, 'CNY', 50, 1, 10),
+    ('standard_200', '标准包', '适合持续跟进价格和方案', 4900, 'CNY', 200, 1, 20);
+
+  CREATE TABLE IF NOT EXISTS billing_orders (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    plan_id TEXT NOT NULL,
+    out_trade_no TEXT NOT NULL UNIQUE,
+    provider TEXT NOT NULL DEFAULT 'alipay',
+    subject TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'CNY',
+    quota_messages INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'created',
+    alipay_trade_no TEXT,
+    trade_status TEXT,
+    paid_at TEXT,
+    fulfilled_at TEXT,
+    closed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (plan_id) REFERENCES billing_plans(id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_billing_orders_user_id
+    ON billing_orders(user_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_billing_orders_status
+    ON billing_orders(status, created_at DESC);
+
+  CREATE TABLE IF NOT EXISTS payment_events (
+    id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    order_id TEXT,
+    out_trade_no TEXT,
+    provider_trade_no TEXT,
+    event_type TEXT NOT NULL,
+    trade_status TEXT,
+    signature_valid INTEGER NOT NULL DEFAULT 0,
+    raw_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (order_id) REFERENCES billing_orders(id) ON DELETE SET NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_payment_events_order_id
+    ON payment_events(order_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_payment_events_out_trade_no
+    ON payment_events(out_trade_no, created_at DESC);
+
+  CREATE TABLE IF NOT EXISTS credit_ledger (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    order_id TEXT,
+    run_id TEXT,
+    delta INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    note TEXT,
+    created_by TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (order_id) REFERENCES billing_orders(id) ON DELETE SET NULL,
+    FOREIGN KEY (run_id) REFERENCES agent_runs(id) ON DELETE SET NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_credit_ledger_user_id
+    ON credit_ledger(user_id, created_at DESC);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_ledger_order_purchase
+    ON credit_ledger(order_id, reason)
+    WHERE order_id IS NOT NULL AND reason = 'purchase';
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_ledger_run_chat
+    ON credit_ledger(run_id, reason)
+    WHERE run_id IS NOT NULL AND reason = 'chat';
+
   CREATE TABLE IF NOT EXISTS notification_config (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useChat } from '@ai-sdk/react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { DefaultChatTransport, generateId, type UIMessage } from 'ai';
@@ -21,6 +22,7 @@ import {
   Ship,
   ArrowDown,
   Zap,
+  AlertCircle,
 } from 'lucide-react';
 import { useSWRConfig } from 'swr';
 import { unstable_serialize } from 'swr/infinite';
@@ -201,13 +203,31 @@ export function Chat({ id, initialMessages }: ChatProps) {
   const thinkingEnabled = chatMode === 'thinking';
   const hasReplacedUrl = useRef(false);
   const { mutate } = useSWRConfig();
+  const [billingNotice, setBillingNotice] = useState<string | null>(null);
+
+  const billingAwareFetch = useCallback(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await fetchWithAuthRedirect(input, init);
+      if (response.status === 402) {
+        const json = await response
+          .clone()
+          .json()
+          .catch(() => ({ error: '额度不足' }));
+        setBillingNotice(
+          typeof json.error === 'string' ? json.error : '额度不足',
+        );
+      }
+      return response;
+    },
+    [],
+  );
 
   const { messages, sendMessage, status, stop } = useChat({
     id: chatId,
     messages: initialMessages,
     transport: new DefaultChatTransport({
       api: '/api/chat',
-      fetch: fetchWithAuthRedirect,
+      fetch: billingAwareFetch,
       prepareSendMessagesRequest({ messages, body }) {
         return {
           body: {
@@ -219,6 +239,7 @@ export function Chat({ id, initialMessages }: ChatProps) {
       },
     }),
     onFinish: () => {
+      setBillingNotice(null);
       // 消息完成后刷新侧边栏历史列表
       mutate(unstable_serialize(getChatHistoryPaginationKey));
     },
@@ -371,6 +392,7 @@ export function Chat({ id, initialMessages }: ChatProps) {
   const handleSubmit = (text?: string) => {
     const msg = text || input.trim();
     if (!msg || isLoading) return;
+    setBillingNotice(null);
     sendMessage(
       { text: msg },
       { body: { responseMode: chatMode, thinkingEnabled, browserLocation } },
@@ -460,6 +482,23 @@ export function Chat({ id, initialMessages }: ChatProps) {
           <ArrowDown className="size-4" />
         </button>
       </div>
+
+      {billingNotice && (
+        <div className="mx-auto w-full max-w-3xl px-2 pb-2 sm:px-3 md:px-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+            <span className="flex min-w-0 items-center gap-2">
+              <AlertCircle className="size-4 shrink-0" />
+              <span>{billingNotice}</span>
+            </span>
+            <Link
+              href="/billing"
+              className="inline-flex h-8 items-center rounded-md bg-amber-900 px-2.5 text-xs font-medium text-white hover:bg-amber-800 dark:bg-amber-200 dark:text-amber-950 dark:hover:bg-amber-100"
+            >
+              购买额度
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* Input area */}
       <div className="sticky bottom-0 z-10 mx-auto flex w-full max-w-3xl gap-2 border-t-0 bg-background px-2 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:px-3 md:px-4 md:pb-[calc(env(safe-area-inset-bottom)+1rem)]">

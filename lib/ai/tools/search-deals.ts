@@ -2,7 +2,7 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import * as queries from '@/lib/db/queries';
 import { buildRouteLabel, getRouteEndpoints } from '@/lib/cruise/search-utils';
-import { tierSchema } from './schemas';
+import { coerceOptionalNumber, stringListSchema, tierSchema } from './schemas';
 
 type RouteStopOutput = {
   seq: number;
@@ -80,16 +80,12 @@ export const searchDeals = tool({
       .string()
       .optional()
       .describe('抵达港。用户指定 A 到 B 的开口航线时使用'),
-    itineraryIncludes: z
-      .array(z.string())
-      .optional()
+    itineraryIncludes: stringListSchema()
       .describe('必须经停/停靠/包含的港口列表，如 Singapore, Santorini, Mykonos。用户说“停靠/经停/途经/包含某港”时传这里；departurePort 只用于从某港出发/登船/母港语义'),
-    itineraryExcludes: z
-      .array(z.string())
-      .optional()
+    itineraryExcludes: stringListSchema()
       .describe('不能经停的港口列表'),
-    priceMin: z.number().optional().describe('最低价格'),
-    priceMax: z.number().optional().describe('最高价格'),
+    priceMin: coerceOptionalNumber().describe('最低价格'),
+    priceMax: coerceOptionalNumber().describe('最高价格'),
     sailDateFrom: z
       .string()
       .optional()
@@ -98,8 +94,8 @@ export const searchDeals = tool({
       .string()
       .optional()
       .describe('最晚出发日期 YYYY-MM-DD。用户给出“X 到 Y 之间”时必须传入'),
-    durationMin: z.number().optional().describe('最短天数'),
-    durationMax: z.number().optional().describe('最长天数'),
+    durationMin: coerceOptionalNumber().describe('最短天数'),
+    durationMax: coerceOptionalNumber().describe('最长天数'),
     cabinType: z
       .string()
       .optional()
@@ -122,7 +118,7 @@ export const searchDeals = tool({
       .optional()
       .describe('排序字段，默认按价格'),
     sortOrder: z.enum(['asc', 'desc']).optional(),
-    limit: z.number().optional().describe('返回数量，默认 20，最多 50'),
+    limit: coerceOptionalNumber().describe('返回数量，默认 20，最多 50'),
   }),
   execute: async (params) => {
     const result = queries.searchDeals({

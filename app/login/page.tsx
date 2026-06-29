@@ -63,23 +63,29 @@ export default async function LoginPage({
             </div>
           )}
 
-          <WeChatQrLogin
-            nextPath={nextPath}
-            enabled={wechatConfigured}
-            startUrl={wechatStartUrl}
-          />
-        </div>
-
-        <div className="min-h-10">
-          {devLoginEnabled && (
-            <Link
-              href={`/api/auth/dev/wechat?next=${encodeURIComponent(nextPath)}`}
-              className="mx-auto flex h-9 w-fit items-center justify-center rounded-md border border-[#d7e0ef] px-4 text-sm font-medium text-[#2d64db] hover:bg-[#f3f7ff]"
-            >
-              测试入口（模拟微信登录）
-            </Link>
+          {devLoginEnabled ? (
+            <div className="flex min-h-48 flex-col items-center justify-center gap-3 rounded-md border border-dashed border-[#cbd9ef] bg-[#f8fbff] px-6 text-center">
+              <p className="text-sm font-medium text-[#273142]">本地开发登录</p>
+              <p className="text-xs text-[#7c8798]">
+                localhost 不使用线上微信回调
+              </p>
+              <Link
+                href={`/api/auth/dev/wechat?next=${encodeURIComponent(nextPath)}`}
+                className="mt-2 inline-flex h-9 items-center justify-center rounded-md bg-[#2d64db] px-4 text-sm font-medium text-white hover:bg-[#2454ba]"
+              >
+                使用测试微信用户
+              </Link>
+            </div>
+          ) : (
+            <WeChatQrLogin
+              nextPath={nextPath}
+              enabled={wechatConfigured}
+              startUrl={wechatStartUrl}
+            />
           )}
         </div>
+
+        <div className="min-h-10" />
       </section>
     </main>
   );

@@ -15,8 +15,16 @@ import {
 } from '@/lib/auth/wechat';
 
 function getAppOrigin(req: Request): string {
+  const url = new URL(req.url);
+  if (
+    url.host.startsWith('localhost') ||
+    url.host.startsWith('127.0.0.1') ||
+    url.host.startsWith('[::1]')
+  ) {
+    return url.origin;
+  }
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, '');
-  return new URL(req.url).origin;
+  return url.origin;
 }
 
 function redirectToLogin(origin: string, error: string, nextPath = '/chat') {

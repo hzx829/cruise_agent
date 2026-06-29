@@ -273,17 +273,96 @@ function buildInstructions(
 type SearchDealsInput = Record<string, unknown> & {
   brand?: string;
   departurePort?: string;
-  itineraryIncludes?: string[];
+  arrivalPort?: string;
+  itineraryIncludes?: string[] | string;
+  destination?: string;
+  destinationId?: string;
   sailDateFrom?: string;
   sailDateTo?: string;
   roundtrip?: boolean;
   tier?: string | string[];
 };
 
+const SINGAPORE_PATTERN = /singapore|新加坡|星加坡/i;
+const CARIBBEAN_PATTERN = /caribbean|加勒比/i;
+
 function uniqueStrings(values: Array<string | undefined>): string[] {
   return Array.from(
     new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value))),
   );
+}
+
+function normalizeStringList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item)).filter(Boolean);
+  }
+  if (typeof value !== 'string') return [];
+
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => String(item)).filter(Boolean);
+      }
+    } catch {
+      return [trimmed];
+    }
+  }
+  return [trimmed];
+}
+
+function inputTextForRouteScope(input: SearchDealsInput): string {
+  return [
+    input.destination,
+    input.destinationId,
+    input.departurePort,
+    input.arrivalPort,
+    ...normalizeStringList(input.itineraryIncludes),
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(' ');
+}
+
+function constraintTextForRouteScope(
+  constraints: CruiseIntentContext['hardConstraints'],
+): string {
+  return [
+    constraints.departurePort,
+    ...(constraints.itineraryIncludes ?? []),
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(' ');
+}
+
+function hasKnownRouteConflict(input: SearchDealsInput, constraintText: string): boolean {
+  const inputText = inputTextForRouteScope(input);
+  return (
+    (SINGAPORE_PATTERN.test(constraintText) && CARIBBEAN_PATTERN.test(inputText)) ||
+    (CARIBBEAN_PATTERN.test(constraintText) && SINGAPORE_PATTERN.test(inputText))
+  );
+}
+
+function shouldApplyRouteHardConstraints(
+  input: SearchDealsInput,
+  intentContext: CruiseIntentContext,
+): boolean {
+  const constraints = intentContext.hardConstraints;
+  const constraintText = constraintTextForRouteScope(constraints);
+  if (!constraintText) return false;
+  if (hasKnownRouteConflict(input, constraintText)) return false;
+
+  const hasExplicitDestination = Boolean(input.destination || input.destinationId);
+  if (intentContext.intent === 'comparison' && hasExplicitDestination) {
+    const inputText = inputTextForRouteScope(input);
+    return constraintText
+      .split(/\s+/)
+      .filter(Boolean)
+      .some((term) => inputText.toLowerCase().includes(term.toLowerCase()));
+  }
+
+  return true;
 }
 
 function usesColloquialLuxury(query: string): boolean {
@@ -315,11 +394,12 @@ export function applyHardConstraintsToSearchDealsInput(
   const constraints = intentContext?.hardConstraints;
 
   if (!constraints) return input;
+  const applyRouteConstraints = shouldApplyRouteHardConstraints(input, intentContext);
 
   if (constraints.brand && !input.brand) {
     input.brand = constraints.brand;
   }
-  if (constraints.departurePort && !input.departurePort) {
+  if (applyRouteConstraints && constraints.departurePort && !input.departurePort) {
     input.departurePort = constraints.departurePort;
   }
   if (constraints.sailDateFrom) {
@@ -331,9 +411,9 @@ export function applyHardConstraintsToSearchDealsInput(
   if (constraints.roundtrip && input.roundtrip == null) {
     input.roundtrip = true;
   }
-  if (constraints.itineraryIncludes?.length) {
+  if (applyRouteConstraints && constraints.itineraryIncludes?.length) {
     input.itineraryIncludes = uniqueStrings([
-      ...(Array.isArray(input.itineraryIncludes) ? input.itineraryIncludes : []),
+      ...normalizeStringList(input.itineraryIncludes),
       ...constraints.itineraryIncludes,
     ]);
   }

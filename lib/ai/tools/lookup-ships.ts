@@ -1,6 +1,7 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import * as queries from '@/lib/db/queries';
+import { coerceOptionalNumber } from './schemas';
 
 export const lookupShips = tool({
   description:
@@ -13,7 +14,7 @@ export const lookupShips = tool({
       .string()
       .optional()
       .describe('可选品牌 ID 或品牌名，例如 msc、msc_cn、costa。用户明确品牌时传入。'),
-    limit: z.number().optional().describe('返回数量，默认 8，最大 20'),
+    limit: coerceOptionalNumber().describe('返回数量，默认 8，最大 20'),
   }),
   execute: async ({ query, brand, limit }) => ({
     query,

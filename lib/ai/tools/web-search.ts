@@ -1,5 +1,6 @@
 import { tool } from 'ai';
 import { z } from 'zod';
+import { stringListSchema } from './schemas';
 
 interface TavilyResult {
   title: string;
@@ -334,6 +335,7 @@ export const webSearch = tool({
       .optional()
       .describe('搜索深度。basic 速度快，advanced 信息更全面。复杂问题建议 advanced'),
     maxResults: z
+      .coerce
       .number()
       .min(1)
       .max(8)
@@ -354,15 +356,9 @@ export const webSearch = tool({
       ])
       .optional()
       .describe('搜索目的。official_schedule=官方班期/港口入口，market_supply=市场供给/母港航线，review=评测，travel=攻略，news=新闻，general=通用'),
-    preferredDomains: z
-      .array(z.string())
-      .max(10)
-      .optional()
+    preferredDomains: stringListSchema(10)
       .describe('优先限定搜索的域名列表，例如 ["msccruises.com.cn", "royalcaribbean.com"]。只有明确需要限定来源时使用'),
-    mustIncludeTerms: z
-      .array(z.string())
-      .max(8)
-      .optional()
+    mustIncludeTerms: stringListSchema(8)
       .describe('搜索中必须保留的用户硬约束词，如 ["天津港", "MSC", "2026"]。用于避免把原港口/品牌查偏'),
     recency: z
       .enum(['any', 'month', 'year'])

@@ -50,6 +50,18 @@ interface EnsureRenderableAssistantMessageOptions {
   dropIncompleteToolParts?: boolean;
 }
 
+function isToolPart(part: MessagePart): boolean {
+  return typeof part.type === 'string' && part.type.startsWith('tool-');
+}
+
+function isKnownToolPart(part: MessagePart): boolean {
+  return RENDERABLE_TOOL_PART_TYPES.has(part.type);
+}
+
+function isUnknownToolPart(part: MessagePart): boolean {
+  return isToolPart(part) && !isKnownToolPart(part);
+}
+
 function getPartState(part: MessagePart): string | undefined {
   if (!('state' in part)) return undefined;
   return typeof part.state === 'string' ? part.state : undefined;
@@ -60,14 +72,14 @@ function setPartState(part: MessagePart, state: string): MessagePart {
 }
 
 function isRenderableToolPart(part: MessagePart): boolean {
-  if (!RENDERABLE_TOOL_PART_TYPES.has(part.type)) return false;
+  if (!isKnownToolPart(part)) return false;
 
   const state = getPartState(part);
   return state === 'output-available' || state === 'output-error';
 }
 
 function isIncompleteToolPart(part: MessagePart): boolean {
-  if (!RENDERABLE_TOOL_PART_TYPES.has(part.type)) return false;
+  if (!isKnownToolPart(part)) return false;
   const state = getPartState(part);
   return Boolean(state && INCOMPLETE_TOOL_STATES.has(state));
 }
@@ -76,6 +88,10 @@ function normalizeFinishedPart(
   part: MessagePart,
   options: EnsureRenderableAssistantMessageOptions,
 ): MessagePart | null {
+  if (isUnknownToolPart(part)) {
+    return null;
+  }
+
   if (isIncompleteToolPart(part) && options.dropIncompleteToolParts) {
     return null;
   }
@@ -107,6 +123,11 @@ function normalizeMalformedToolArtifacts(parts: MessagePart[]): {
 
   const normalizedParts = parts
     .map((part) => {
+      if (isUnknownToolPart(part)) {
+        hadArtifact = true;
+        return null;
+      }
+
       if (part.type !== 'text' || !hasTextArtifact(part.text)) return part;
 
       hadArtifact = true;
@@ -127,7 +148,9 @@ export function hasAssistantTextContent(message: UIMessage): boolean {
 
 export function hasMalformedToolArtifact(message: UIMessage): boolean {
   return message.parts.some(
-    (part) => part.type === 'text' && hasTextArtifact(part.text),
+    (part) =>
+      isUnknownToolPart(part) ||
+      (part.type === 'text' && hasTextArtifact(part.text)),
   );
 }
 
@@ -207,4 +230,34 @@ export function ensureRenderableAssistantMessage(
     ...message,
     parts: [{ type: 'text', text: fallbackText, state: 'done' }],
   };
+}
+
+export function sanitizeMessageForAgent(message: UIMessage): UIMessage | null {
+  if (!Array.isArray(message.parts)) {
+    return null;
+  }
+
+  if (message.role === 'assistant') {
+    const normalized = ensureRenderableAssistantMessage(message, undefined, {
+      dropIncompleteToolParts: true,
+    });
+    return normalized.parts.length > 0 ? normalized : null;
+  }
+
+  const normalizedParts = normalizeMalformedToolArtifacts(
+    message.parts
+      .map((part) =>
+        normalizeFinishedPart(part, { dropIncompleteToolParts: true }),
+      )
+      .filter((part): part is MessagePart => Boolean(part)),
+  ).parts;
+
+  if (normalizedParts.length === 0) return null;
+  return { ...message, parts: normalizedParts };
+}
+
+export function sanitizeMessagesForAgent(messages: UIMessage[]): UIMessage[] {
+  return messages
+    .map((message) => sanitizeMessageForAgent(message))
+    .filter((message): message is UIMessage => Boolean(message));
 }
