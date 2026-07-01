@@ -63,6 +63,14 @@ function getDefaultThinkingEnabled(): boolean {
   return parseBoolean(process.env.CHAT_THINKING_DEFAULT) ?? false;
 }
 
+function getChatBillingEnabled(): boolean {
+  return (
+    parseBoolean(process.env.CHAT_BILLING_ENABLED) ??
+    parseBoolean(process.env.BILLING_ENABLED) ??
+    false
+  );
+}
+
 function resolveThinkingEnabled(value: unknown): boolean {
   return parseBoolean(value) ?? getDefaultThinkingEnabled();
 }
@@ -237,7 +245,8 @@ export async function POST(req: Request) {
     );
   }
 
-  if (getCreditBalance(user.id) <= 0) {
+  const chatBillingEnabled = getChatBillingEnabled();
+  if (chatBillingEnabled && getCreditBalance(user.id) <= 0) {
     return NextResponse.json(
       {
         error: '额度不足',
@@ -578,7 +587,11 @@ export async function POST(req: Request) {
               : undefined,
           ...usageTokens,
         });
-        if (terminalStatus === 'completed' && assistantTextLen > 0) {
+        if (
+          chatBillingEnabled &&
+          terminalStatus === 'completed' &&
+          assistantTextLen > 0
+        ) {
           chargeChatCredit({
             userId: user.id,
             runId,
