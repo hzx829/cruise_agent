@@ -13,6 +13,7 @@ import {
   Plus,
   Settings2,
   ShieldCheck,
+  UsersRound,
   WalletCards,
 } from 'lucide-react';
 
@@ -41,7 +42,10 @@ interface AuthMe {
 const ADMIN_TOKEN_STORAGE_KEY = 'cruise_agent_admin_token';
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
-function useShowAdminMenu(): boolean {
+function useAdminMenuAccess(): {
+  showAdminMenu: boolean;
+  showUserManagement: boolean;
+} {
   const { data } = useSWR<AuthMe>('/api/auth/me', fetcher, {
     revalidateOnFocus: false,
   });
@@ -51,12 +55,18 @@ function useShowAdminMenu(): boolean {
       Boolean(window.localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY)),
   );
 
-  return data?.user?.role === 'admin' || hasStoredAdminToken;
+  const role = data?.user?.role;
+  const isAdminRole = role === 'admin' || role === 'root';
+
+  return {
+    showAdminMenu: isAdminRole || hasStoredAdminToken,
+    showUserManagement: role === 'root',
+  };
 }
 
 export function AppSidebar() {
   const router = useRouter();
-  const showAdminMenu = useShowAdminMenu();
+  const { showAdminMenu, showUserManagement } = useAdminMenuAccess();
 
   return (
     <Sidebar>
@@ -113,7 +123,7 @@ export function AppSidebar() {
           </SidebarMenuItem>
           {showAdminMenu && (
             <SidebarMenuItem>
-              <AdminMenu />
+              <AdminMenu showUserManagement={showUserManagement} />
             </SidebarMenuItem>
           )}
           <SidebarMenuItem>
@@ -128,7 +138,11 @@ export function AppSidebar() {
   );
 }
 
-function AdminMenu() {
+function AdminMenu({
+  showUserManagement,
+}: {
+  showUserManagement: boolean;
+}) {
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
@@ -145,6 +159,9 @@ function AdminMenu() {
           sideOffset={8}
           className="z-50 w-52 rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg"
         >
+          {showUserManagement && (
+            <AdminMenuItem href="/admin/users" icon={UsersRound} label="Users" />
+          )}
           <AdminMenuItem href="/admin/prompts" icon={Settings2} label="Prompt" />
           <AdminMenuItem href="/admin/billing" icon={WalletCards} label="计费" />
           <AdminMenuItem
