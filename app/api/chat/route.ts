@@ -35,6 +35,7 @@ import {
 } from '@/lib/db/agent-trace-store';
 import { getAuthenticatedRequestUser } from '@/lib/auth/session';
 import { chargeChatCredit, getCreditBalance } from '@/lib/db/billing-store';
+import { isChatBillingEnabled } from '@/lib/billing/config';
 
 export const maxDuration = 120;
 
@@ -61,14 +62,6 @@ function parseBoolean(value: unknown): boolean | undefined {
 
 function getDefaultThinkingEnabled(): boolean {
   return parseBoolean(process.env.CHAT_THINKING_DEFAULT) ?? false;
-}
-
-function getChatBillingEnabled(): boolean {
-  return (
-    parseBoolean(process.env.CHAT_BILLING_ENABLED) ??
-    parseBoolean(process.env.BILLING_ENABLED) ??
-    false
-  );
 }
 
 function resolveThinkingEnabled(value: unknown): boolean {
@@ -245,7 +238,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const chatBillingEnabled = getChatBillingEnabled();
+  const chatBillingEnabled = isChatBillingEnabled();
   if (chatBillingEnabled && getCreditBalance(user.id) <= 0) {
     return NextResponse.json(
       {

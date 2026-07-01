@@ -7,6 +7,7 @@ import {
   listRecentBillingOrders,
 } from '@/lib/db/billing-store';
 import { isAlipayConfigured } from '@/lib/billing/alipay';
+import { isChatBillingEnabled } from '@/lib/billing/config';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +22,7 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     balance: getCreditBalance(user.id),
+    billingEnabled: isChatBillingEnabled(),
     plans: listActiveBillingPlans(),
     orders: listRecentBillingOrders(user.id, 10),
     ledger: listCreditLedger(user.id, 20),

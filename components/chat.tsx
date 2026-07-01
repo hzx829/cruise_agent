@@ -23,6 +23,7 @@ import {
   ArrowDown,
   Zap,
   AlertCircle,
+  X,
 } from 'lucide-react';
 import { useSWRConfig } from 'swr';
 import { unstable_serialize } from 'swr/infinite';
@@ -213,13 +214,16 @@ export function Chat({ id, initialMessages }: ChatProps) {
           .clone()
           .json()
           .catch(() => ({ error: '额度不足' }));
+        const message =
+          typeof json.error === 'string' ? json.error : '额度不足';
         setBillingNotice(
-          typeof json.error === 'string' ? json.error : '额度不足',
+          message.includes('额度') ? `${message}，请购买额度后继续使用。` : message,
         );
+        void mutate('/api/billing/me');
       }
       return response;
     },
-    [],
+    [mutate],
   );
 
   const { messages, sendMessage, status, stop } = useChat({
@@ -242,6 +246,7 @@ export function Chat({ id, initialMessages }: ChatProps) {
       setBillingNotice(null);
       // 消息完成后刷新侧边栏历史列表
       mutate(unstable_serialize(getChatHistoryPaginationKey));
+      mutate('/api/billing/me');
     },
   });
 
@@ -484,20 +489,10 @@ export function Chat({ id, initialMessages }: ChatProps) {
       </div>
 
       {billingNotice && (
-        <div className="mx-auto w-full max-w-3xl px-2 pb-2 sm:px-3 md:px-4">
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
-            <span className="flex min-w-0 items-center gap-2">
-              <AlertCircle className="size-4 shrink-0" />
-              <span>{billingNotice}</span>
-            </span>
-            <Link
-              href="/billing"
-              className="inline-flex h-8 items-center rounded-md bg-amber-900 px-2.5 text-xs font-medium text-white hover:bg-amber-800 dark:bg-amber-200 dark:text-amber-950 dark:hover:bg-amber-100"
-            >
-              购买额度
-            </Link>
-          </div>
-        </div>
+        <BillingNoticeToast
+          message={billingNotice}
+          onClose={() => setBillingNotice(null)}
+        />
       )}
 
       {/* Input area */}
@@ -602,6 +597,43 @@ function ChatModeSelector({
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
+  );
+}
+
+function BillingNoticeToast({
+  message,
+  onClose,
+}: {
+  message: string;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      role="alert"
+      className="fixed bottom-24 left-1/2 z-50 w-[min(92vw,28rem)] -translate-x-1/2 rounded-lg border border-amber-200 bg-background p-3 text-sm shadow-lg dark:border-amber-900/60"
+    >
+      <div className="flex items-start gap-3">
+        <AlertCircle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+        <div className="min-w-0 flex-1">
+          <p className="font-medium text-foreground">额度不足</p>
+          <p className="mt-1 text-muted-foreground">{message}</p>
+          <Link
+            href="/billing"
+            className="mt-3 inline-flex h-8 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            购买额度
+          </Link>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="关闭提示"
+          className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+    </div>
   );
 }
 

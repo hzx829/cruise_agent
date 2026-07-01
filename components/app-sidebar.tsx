@@ -29,6 +29,7 @@ import { SidebarHistory } from './sidebar-history';
 import { ThemeToggle } from './theme-toggle';
 import { NotificationBell } from './notification-bell';
 import { AccountMenu } from './account-menu';
+import { BillingStatus } from './billing-status';
 
 interface AuthMe {
   authenticated: boolean;
@@ -108,12 +109,7 @@ export function AppSidebar() {
             <AccountMenu />
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton tooltip="额度" asChild>
-              <Link href="/billing">
-                <WalletCards />
-                <span>额度</span>
-              </Link>
-            </SidebarMenuButton>
+            <BillingStatus />
           </SidebarMenuItem>
           {showAdminMenu && (
             <SidebarMenuItem>
