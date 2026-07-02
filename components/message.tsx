@@ -200,6 +200,7 @@ export function Message({
 
             // Tool parts
             case 'tool-searchDeals':
+            case 'tool-getDealDetails':
             case 'tool-getBrandOverview':
             case 'tool-analyzePrices':
             case 'tool-getPriceHistory':
@@ -334,6 +335,7 @@ function ReasoningBlock({
 function getToolLabel(toolName: string): string {
   const labels: Record<string, string> = {
     searchDeals: '🔍 搜索航线中...',
+    getDealDetails: '📋 获取航线详情...',
     getBrandOverview: '📊 获取品牌概览...',
     analyzePrices: '📈 分析价格...',
     getPriceHistory: '📉 查询价格历史...',
@@ -355,6 +357,7 @@ function getToolLabel(toolName: string): string {
 function getToolCompletedLabel(toolName: string): string {
   const labels: Record<string, string> = {
     searchDeals: '已搜索航线',
+    getDealDetails: '已获取航线详情',
     getBrandOverview: '已获取品牌概览',
     analyzePrices: '已分析价格',
     getPriceHistory: '已查询价格历史',

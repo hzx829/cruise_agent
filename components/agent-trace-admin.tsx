@@ -120,6 +120,7 @@ const INTENT_OPTIONS = [
 const TOOL_OPTIONS = [
   '',
   'searchDeals',
+  'getDealDetails',
   'webSearch',
   'cruiseEncyclopedia',
   'getPriceHistory',

@@ -1,5 +1,6 @@
 // 🔒 价格类工具 — 数据来自爬虫数据库，准确可靠
 export { searchDeals } from './search-deals';
+export { getDealDetails } from './get-deal-details';
 export { getTopPriceDrops } from './get-top-drops';
 export { getPriceHistory } from './get-price-history';
 export { getRegionalPrices } from './get-regional-prices';

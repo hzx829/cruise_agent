@@ -12,6 +12,14 @@ export const getPriceHistory = tool({
   execute: async ({ dealId }) => {
     const deal = queries.getDealById(dealId, 'zh-CN');
     const history = queries.getPriceHistory(dealId);
+    const minPoint = history.reduce<(typeof history)[number] | null>(
+      (best, item) => (!best || item.price < best.price ? item : best),
+      null,
+    );
+    const maxPoint = history.reduce<(typeof history)[number] | null>(
+      (best, item) => (!best || item.price > best.price ? item : best),
+      null,
+    );
 
     return {
       deal: deal
@@ -55,6 +63,10 @@ export const getPriceHistory = tool({
             ),
             priceFirst: history[0].price,
             priceLast: history[history.length - 1].price,
+            firstRecordedAt: history[0].recorded_at,
+            lastRecordedAt: history[history.length - 1].recorded_at,
+            minRecordedAt: minPoint?.recorded_at ?? null,
+            maxRecordedAt: maxPoint?.recorded_at ?? null,
             changePct:
               history.length >= 2
                 ? Math.round(

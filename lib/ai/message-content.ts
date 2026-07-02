@@ -16,6 +16,7 @@ type MessagePart = UIMessage['parts'][number];
 
 const RENDERABLE_TOOL_PART_TYPES = new Set<string>([
   'tool-searchDeals',
+  'tool-getDealDetails',
   'tool-getBrandOverview',
   'tool-analyzePrices',
   'tool-getPriceHistory',
@@ -39,7 +40,7 @@ const INCOMPLETE_TOOL_STATES = new Set<string>([
 
 const STREAMING_PART_STATES = new Set<string>(['streaming']);
 const MALFORMED_TOOL_ARTIFACT_PATTERN =
-  /\b(?:ActionCreators|StackNavigator)\b|(?:^|\s)(?:webSearch|searchDeals|cruiseEncyclopedia|lookupShips)\s*\(/i;
+  /\b(?:ActionCreators|StackNavigator)\b|(?:^|\s)(?:webSearch|searchDeals|getDealDetails|cruiseEncyclopedia|lookupShips)\s*\(/i;
 const TOOL_ARTIFACT_TAIL_PATTERN =
   /\s*(?:ActionCreators|StackNavigator)[\s\S]*$/i;
 const TRAILING_SEARCH_PROMISE_PATTERN =

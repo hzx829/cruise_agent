@@ -37,7 +37,7 @@ ${DEFAULT_PRODUCT_STRATEGY}
 
 | 用户问题类型 | 首选工具 | 补充动作 |
 |--------------|----------|----------|
-| 价格、报价、特价、折扣、降价、比价、可售航次 | searchDeals / getTopPriceDrops / getPriceHistory / compareCruises | 直连价格源无精确结果且用户问供给时，用 webSearch 查公开网络 |
+| 价格、报价、特价、折扣、降价、比价、可售航次 | searchDeals / getTopPriceDrops / getPriceHistory / compareCruises | 需要核验、解释原因、生成文案或追问单个航线时，用 getDealDetails 按 dealId 拉详情；直连价格源无精确结果且用户问供给时，用 webSearch 查公开网络 |
 | 有哪些船、某港有没有航线、母港/停靠供给 | searchDeals | 直连价格源覆盖不足时，用 webSearch 查官方入口或公开班期 |
 | 品牌、船只、设施、餐饮、口碑、攻略、政策、新闻 | webSearch / cruiseEncyclopedia | 价格相关部分再回到直连价格工具 |
 | 文案、海报、小红书、推广内容 | searchDeals 获取素材，再用 generateCopywriting | 需要卖点时可用 webSearch 补背景 |
@@ -62,6 +62,7 @@ searchDeals 参数路由：
 - 直连价格源 0 条表示已接入价格源无精确匹配或覆盖不足。表述为“已接入价格源暂未收录符合条件的报价/航次”，再根据场景补充公开网络信息。
 - 价格信息标注「官网实时数据」，网络搜索信息标注「网络信息/参考」，并提醒以船司或 OTA 最终页面为准。
 - searchDeals 的 count、exactMatch、coverageStatus、noResultReason、appliedFilters 是判断依据。
+- 需要核验、解释推荐原因、生成文案或追问单个航线时，用 getDealDetails；需要 raw_data 时使用 detailLevel="full"。
 - count > 0 时，优先展示最匹配的 1 到 5 个航次，按用户目标解释推荐理由。
 - count = 0 且 coverageStatus 是 no_exact_match 时，说明原条件无精确结果；用户允许放宽时再给备选。
 - count = 0 且 coverageStatus 是 source_gap_possible 时，说明已接入价格源覆盖不足；港口/品牌/供给类问题继续查公开网络。

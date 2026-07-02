@@ -266,7 +266,7 @@ async function tavilySearch(params: {
   const body = {
     query: params.query,
     search_depth: chooseSearchDepth(params.searchDepth),
-    max_results: Math.min(params.maxResults ?? 4, 5),
+    max_results: Math.min(params.maxResults ?? 4, 8),
     include_domains: params.includeDomains,
     exclude_domains: params.excludeDomains,
     topic: params.topic,
@@ -340,7 +340,7 @@ export const webSearch = tool({
       .min(1)
       .max(8)
       .optional()
-      .describe('返回结果数量，默认 5，最多 8'),
+      .describe('返回结果数量，默认 4，最多 8'),
     focusDomain: z
       .enum(['general', 'review', 'travel', 'news'])
       .optional()

@@ -17,6 +17,7 @@ import {
 } from './request-context';
 import {
   searchDeals,
+  getDealDetails,
   getTopPriceDrops,
   getPriceHistory,
   getRegionalPrices,
@@ -36,6 +37,7 @@ import {
 
 const cruiseTools = {
   searchDeals,
+  getDealDetails,
   getTopPriceDrops,
   getPriceHistory,
   getRegionalPrices,
@@ -57,6 +59,7 @@ type CruiseToolName = keyof typeof cruiseTools;
 
 const PRICE_QUOTE_TOOLS: CruiseToolName[] = [
   'searchDeals',
+  'getDealDetails',
   'getTopPriceDrops',
   'getPriceHistory',
   'getRegionalPrices',
@@ -68,6 +71,7 @@ const PRICE_QUOTE_TOOLS: CruiseToolName[] = [
 
 const MARKET_SUPPLY_TOOLS: CruiseToolName[] = [
   'searchDeals',
+  'getDealDetails',
   'lookupShips',
   'webSearch',
   'listDestinations',
@@ -78,6 +82,7 @@ const REVIEW_TOOLS: CruiseToolName[] = ['lookupShips', 'webSearch', 'cruiseEncyc
 
 const COPYWRITING_TOOLS: CruiseToolName[] = [
   'searchDeals',
+  'getDealDetails',
   'getTopPriceDrops',
   'getPriceHistory',
   'webSearch',
