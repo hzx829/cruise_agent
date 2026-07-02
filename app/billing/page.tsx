@@ -5,7 +5,7 @@ import { BillingDashboard } from '@/components/billing-dashboard';
 import { getAuthenticatedCookieStoreUser } from '@/lib/auth/session';
 
 export const metadata: Metadata = {
-  title: '额度 | 邮轮特价助手',
+  title: '额度与套餐 | 邮轮特价助手',
 };
 
 export default async function BillingPage() {

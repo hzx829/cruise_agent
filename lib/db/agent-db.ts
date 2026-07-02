@@ -135,11 +135,25 @@ agentDb.exec(`
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
-  INSERT OR IGNORE INTO billing_plans
+  UPDATE billing_plans
+  SET active = 0, updated_at = datetime('now')
+  WHERE id IN ('starter_50', 'standard_200');
+
+  INSERT INTO billing_plans
     (id, name, description, amount_cents, currency, quota_messages, active, sort_order)
   VALUES
-    ('starter_50', '体验包', '适合短期找船和比价', 1900, 'CNY', 50, 1, 10),
-    ('standard_200', '标准包', '适合持续跟进价格和方案', 4900, 'CNY', 200, 1, 20);
+    ('monthly_lite', '轻量月包', '600 点/月，约 50 次私有库报价', 2900, 'CNY', 600, 1, 10),
+    ('monthly_standard', '标准月包', '3000 点/月，约 250 次私有库报价', 8900, 'CNY', 3000, 1, 20),
+    ('monthly_pro', '专业月包', '8000 点/月，约 660 次私有库报价', 19900, 'CNY', 8000, 1, 30)
+  ON CONFLICT(id) DO UPDATE SET
+    name = excluded.name,
+    description = excluded.description,
+    amount_cents = excluded.amount_cents,
+    currency = excluded.currency,
+    quota_messages = excluded.quota_messages,
+    active = excluded.active,
+    sort_order = excluded.sort_order,
+    updated_at = datetime('now');
 
   CREATE TABLE IF NOT EXISTS billing_orders (
     id TEXT PRIMARY KEY,

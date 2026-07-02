@@ -21,9 +21,13 @@ const fetcher = async (url: string): Promise<BillingMeResponse | null> => {
 };
 
 function getQuotaBase(data: BillingMeResponse | null | undefined): number {
-  const starterQuota = data?.plans.find((plan) => plan.quotaMessages > 0)
-    ?.quotaMessages;
-  return Math.max(starterQuota ?? data?.balance ?? 1, 1);
+  const balance = data?.balance ?? 0;
+  const planQuotas = (data?.plans ?? [])
+    .map((plan) => plan.quotaMessages)
+    .filter((quota) => quota > 0)
+    .sort((a, b) => a - b);
+  const nearestPlanQuota = planQuotas.find((quota) => quota >= balance);
+  return Math.max(nearestPlanQuota ?? balance ?? 1, 1);
 }
 
 export function BillingStatus() {
@@ -63,7 +67,7 @@ export function BillingStatus() {
   const detailLabel = billingEnabled
     ? isEmpty
       ? '额度已用完'
-      : `剩余 ${balance} 次`
+      : `剩余 ${balance} 点`
     : '当前不扣额度';
   const barColor = isEmpty
     ? 'bg-destructive'

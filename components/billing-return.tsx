@@ -109,7 +109,7 @@ export function BillingReturn({ orderId }: { orderId: string | null }) {
             </div>
             <div className="flex justify-between gap-3">
               <span className="text-muted-foreground">额度</span>
-              <span>{data.order.quotaMessages}</span>
+              <span>{data.order.quotaMessages} 点</span>
             </div>
             <div className="flex justify-between gap-3">
               <span className="text-muted-foreground">余额</span>

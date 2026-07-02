@@ -36,6 +36,10 @@ import {
 import { getAuthenticatedRequestUser } from '@/lib/auth/session';
 import { chargeChatCredit, getCreditBalance } from '@/lib/db/billing-store';
 import { isChatBillingEnabled } from '@/lib/billing/config';
+import {
+  estimateChatCreditCost,
+  getMinimumChatCreditCost,
+} from '@/lib/billing/usage-cost';
 
 export const maxDuration = 120;
 
@@ -221,6 +225,23 @@ function getUsageTokens(usage: LanguageModelUsage | undefined): {
   };
 }
 
+function getWebSearchCredits(toolName: string, output: unknown): number {
+  if (toolName !== 'webSearch' && toolName !== 'cruiseEncyclopedia') return 0;
+  if (!output || typeof output !== 'object') return 1;
+
+  const record = output as {
+    available?: unknown;
+    skipped?: unknown;
+    usage?: {
+      credits?: unknown;
+    };
+  };
+  if (record.skipped === true || record.available === false) return 0;
+
+  const credits = Number(record.usage?.credits);
+  return Number.isFinite(credits) && credits > 0 ? credits : 1;
+}
+
 function toIsoTime(value: number): string {
   return new Date(value).toISOString();
 }
@@ -239,10 +260,11 @@ export async function POST(req: Request) {
   }
 
   const chatBillingEnabled = isChatBillingEnabled();
-  if (chatBillingEnabled && getCreditBalance(user.id) <= 0) {
+  const minimumChatCreditCost = getMinimumChatCreditCost();
+  if (chatBillingEnabled && getCreditBalance(user.id) < minimumChatCreditCost) {
     return NextResponse.json(
       {
-        error: '额度不足',
+        error: `额度不足，至少需要 ${minimumChatCreditCost} 点`,
         paymentRequired: true,
         billingUrl: '/billing',
       },
@@ -308,6 +330,7 @@ export async function POST(req: Request) {
   let toolResultCount = 0;
   let savedErrorFallback = false;
   let totalUsage: LanguageModelUsage | undefined;
+  let webSearchCredits = 0;
   const stepStarts = new Map<number, number>();
   const finishedStepNumbers = new Set<number>();
   const stepToolDurationMs = new Map<number, number>();
@@ -428,6 +451,12 @@ export async function POST(req: Request) {
           : rawToolInput;
 
       rememberToolTiming(stepNumber, startedAtMs, endedAtMs, durationMs);
+      if (event.success) {
+        webSearchCredits += getWebSearchCredits(
+          event.toolCall.toolName,
+          event.output,
+        );
+      }
 
       try {
         saveAgentToolCall({
@@ -585,10 +614,16 @@ export async function POST(req: Request) {
           terminalStatus === 'completed' &&
           assistantTextLen > 0
         ) {
+          const chargedPoints = estimateChatCreditCost({
+            promptTokens: usageTokens.promptTokens,
+            completionTokens: usageTokens.completionTokens,
+            webSearchCredits,
+          });
           chargeChatCredit({
             userId: user.id,
             runId,
-            note: latestUserText.slice(0, 120),
+            points: chargedPoints,
+            note: `${chargedPoints} 点 · ${latestUserText.slice(0, 100)}`,
           });
         }
       } catch (persistError) {

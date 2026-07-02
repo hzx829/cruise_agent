@@ -327,7 +327,7 @@ const stmtChargeChatCredit = agentDb.prepare(`
   INSERT OR IGNORE INTO credit_ledger (
     id, user_id, run_id, delta, reason, note, created_by
   )
-  VALUES (?, ?, ?, -1, 'chat', ?, 'system')
+  VALUES (?, ?, ?, ?, 'chat', ?, 'system')
 `);
 
 const stmtManualCreditAdjustment = agentDb.prepare(`
@@ -411,7 +411,7 @@ export function createBillingOrder(input: {
   }
 
   const id = createId('ord');
-  const subject = `邮轮助手${plan.name}`;
+  const subject = `邮轮特价助手 · ${plan.name}`;
   stmtInsertOrder.run(
     id,
     input.userId,
@@ -549,12 +549,14 @@ export function listCreditLedger(
 export function chargeChatCredit(input: {
   userId: string;
   runId: string;
+  points?: number;
   note?: string | null;
 }): void {
   stmtChargeChatCredit.run(
     createId('crd'),
     input.userId,
     input.runId,
+    -Math.max(Math.trunc(input.points ?? 1), 1),
     input.note ?? 'AI 对话',
   );
 }

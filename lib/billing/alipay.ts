@@ -132,7 +132,7 @@ export function createAlipayPagePayHtml(order: BillingOrder): string {
       product_code: 'FAST_INSTANT_TRADE_PAY',
       total_amount: formatCnyAmount(order.amountCents),
       subject: order.subject,
-      body: `${order.quotaMessages} 次 AI 邮轮助手额度`,
+      body: `${order.quotaMessages} 点 AI 邮轮助手额度`,
     },
   });
 }
