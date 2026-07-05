@@ -42,9 +42,11 @@ const managedUserSelect = `
   SELECT
     u.*,
     (
-      SELECT COALESCE(SUM(delta), 0)
-      FROM credit_ledger l
-      WHERE l.user_id = u.id
+      SELECT COALESCE(SUM(remaining), 0)
+      FROM credit_grants g
+      WHERE g.user_id = u.id
+        AND g.remaining > 0
+        AND (g.expires_at IS NULL OR datetime(g.expires_at) > datetime('now'))
     ) AS balance,
     (
       SELECT COUNT(*)

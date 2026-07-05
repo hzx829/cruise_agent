@@ -50,6 +50,7 @@ export interface CreditLedgerEntry {
   reason: string;
   note: string | null;
   createdBy: string | null;
+  expiresAt: string | null;
   createdAt: string;
 }
 
@@ -116,7 +117,20 @@ interface CreditLedgerRow {
   reason: string;
   note: string | null;
   created_by: string | null;
+  expires_at: string | null;
   created_at: string;
+}
+
+interface CreditGrantRow {
+  id: string;
+  user_id: string;
+  order_id: string | null;
+  ledger_id: string | null;
+  total: number;
+  remaining: number;
+  expires_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 interface PaymentEventRow {
@@ -157,6 +171,14 @@ function createOutTradeNo(): string {
     String(now.getSeconds()).padStart(2, '0'),
   ].join('');
   return `CS${stamp}${randomBytes(6).toString('hex').toUpperCase()}`;
+}
+
+function addMonthsIso(value: string | null | undefined, months: number): string {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return addMonthsIso(undefined, months);
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + months);
+  return next.toISOString();
 }
 
 function mapPlan(row: BillingPlanRow): BillingPlan {
@@ -206,6 +228,7 @@ function mapLedger(row: CreditLedgerRow): CreditLedgerEntry {
     reason: row.reason,
     note: row.note,
     createdBy: row.created_by,
+    expiresAt: row.expires_at,
     createdAt: row.created_at,
   };
 }
@@ -306,15 +329,31 @@ const stmtMarkOrderClosed = agentDb.prepare(`
 
 const stmtInsertPurchaseCredit = agentDb.prepare(`
   INSERT OR IGNORE INTO credit_ledger (
-    id, user_id, order_id, delta, reason, note, created_by
+    id, user_id, order_id, delta, reason, note, created_by, expires_at
   )
-  VALUES (?, ?, ?, ?, 'purchase', ?, 'alipay')
+  VALUES (?, ?, ?, ?, 'purchase', ?, 'alipay', ?)
+`);
+
+const stmtGetPurchaseCreditForOrder = agentDb.prepare(`
+  SELECT id
+  FROM credit_ledger
+  WHERE order_id = ? AND reason = 'purchase'
+  LIMIT 1
+`);
+
+const stmtInsertCreditGrant = agentDb.prepare(`
+  INSERT OR IGNORE INTO credit_grants (
+    id, user_id, order_id, ledger_id, total, remaining, expires_at
+  )
+  VALUES (?, ?, ?, ?, ?, ?, ?)
 `);
 
 const stmtCreditBalance = agentDb.prepare(`
-  SELECT COALESCE(SUM(delta), 0) AS balance
-  FROM credit_ledger
+  SELECT COALESCE(SUM(remaining), 0) AS balance
+  FROM credit_grants
   WHERE user_id = ?
+    AND remaining > 0
+    AND (expires_at IS NULL OR datetime(expires_at) > datetime('now'))
 `);
 
 const stmtListRecentOrdersForUser = agentDb.prepare(`
@@ -334,15 +373,37 @@ const stmtListLedgerForUser = agentDb.prepare(`
 `);
 
 const stmtChargeChatCredit = agentDb.prepare(`
-  INSERT OR IGNORE INTO credit_ledger (
+  INSERT INTO credit_ledger (
     id, user_id, run_id, delta, reason, note, created_by
   )
-  SELECT ?, ?, ?, ?, 'chat', ?, 'system'
-  WHERE (
-    SELECT COALESCE(SUM(delta), 0)
-    FROM credit_ledger
-    WHERE user_id = ?
-  ) >= ?
+  VALUES (?, ?, ?, ?, 'chat', ?, 'system')
+`);
+
+const stmtGetChatCreditForRun = agentDb.prepare(`
+  SELECT id
+  FROM credit_ledger
+  WHERE run_id = ? AND reason = 'chat'
+  LIMIT 1
+`);
+
+const stmtListConsumableCreditGrants = agentDb.prepare(`
+  SELECT *
+  FROM credit_grants
+  WHERE user_id = ?
+    AND remaining > 0
+    AND (expires_at IS NULL OR datetime(expires_at) > datetime('now'))
+  ORDER BY
+    expires_at IS NULL ASC,
+    datetime(expires_at) ASC,
+    datetime(created_at) ASC,
+    created_at ASC
+`);
+
+const stmtUpdateCreditGrantRemaining = agentDb.prepare(`
+  UPDATE credit_grants
+  SET remaining = ?,
+      updated_at = datetime('now')
+  WHERE id = ?
 `);
 
 const stmtManualCreditAdjustment = agentDb.prepare(`
@@ -360,9 +421,11 @@ const stmtListAdminOrders = agentDb.prepare(`
     u.email AS user_email,
     u.phone AS user_phone,
     (
-      SELECT COALESCE(SUM(delta), 0)
-      FROM credit_ledger l
-      WHERE l.user_id = o.user_id
+      SELECT COALESCE(SUM(remaining), 0)
+      FROM credit_grants g
+      WHERE g.user_id = o.user_id
+        AND g.remaining > 0
+        AND (g.expires_at IS NULL OR datetime(g.expires_at) > datetime('now'))
     ) AS user_balance
   FROM billing_orders o
   LEFT JOIN users u ON u.id = o.user_id
@@ -498,6 +561,22 @@ export function recordPaymentEvent(input: {
   return id;
 }
 
+function consumeCreditGrants(userId: string, points: number): boolean {
+  let remainingToCharge = points;
+  const grants = stmtListConsumableCreditGrants.all(userId) as CreditGrantRow[];
+  const balance = grants.reduce((sum, grant) => sum + grant.remaining, 0);
+  if (balance < points) return false;
+
+  for (const grant of grants) {
+    if (remainingToCharge <= 0) break;
+    const charged = Math.min(grant.remaining, remainingToCharge);
+    stmtUpdateCreditGrantRemaining.run(grant.remaining - charged, grant.id);
+    remainingToCharge -= charged;
+  }
+
+  return remainingToCharge === 0;
+}
+
 export function fulfillPaidBillingOrder(input: {
   outTradeNo: string;
   alipayTradeNo?: string | null;
@@ -517,19 +596,37 @@ export function fulfillPaidBillingOrder(input: {
       return { ok: false, reason: 'trade_not_success', order };
     }
 
+    const paidAt = input.paidAt ?? new Date().toISOString();
+    const expiresAt = addMonthsIso(paidAt, 1);
     stmtFulfillOrder.run(
       input.alipayTradeNo ?? null,
       input.tradeStatus,
-      input.paidAt ?? new Date().toISOString(),
+      paidAt,
       order.id,
     );
+    const ledgerId = createId('crd');
     stmtInsertPurchaseCredit.run(
-      createId('crd'),
+      ledgerId,
       order.userId,
       order.id,
       order.quotaMessages,
       `${order.subject} / ${order.outTradeNo}`,
+      expiresAt,
     );
+    const purchaseCredit = stmtGetPurchaseCreditForOrder.get(order.id) as
+      | { id: string }
+      | undefined;
+    if (purchaseCredit?.id) {
+      stmtInsertCreditGrant.run(
+        createId('grt'),
+        order.userId,
+        order.id,
+        purchaseCredit.id,
+        order.quotaMessages,
+        order.quotaMessages,
+        expiresAt,
+      );
+    }
 
     return {
       ok: true,
@@ -576,16 +673,19 @@ export function chargeChatCredit(input: {
   note?: string | null;
 }): boolean {
   const points = Math.max(Math.trunc(input.points ?? 1), 1);
-  const result = stmtChargeChatCredit.run(
-    createId('crd'),
-    input.userId,
-    input.runId,
-    -points,
-    input.note ?? 'AI 对话',
-    input.userId,
-    points,
-  );
-  return result.changes > 0;
+  return agentDb.transaction(() => {
+    const existing = stmtGetChatCreditForRun.get(input.runId);
+    if (existing) return false;
+    if (!consumeCreditGrants(input.userId, points)) return false;
+    stmtChargeChatCredit.run(
+      createId('crd'),
+      input.userId,
+      input.runId,
+      -points,
+      input.note ?? 'AI 对话',
+    );
+    return true;
+  })();
 }
 
 export function adjustUserCredits(input: {
@@ -594,18 +694,35 @@ export function adjustUserCredits(input: {
   note?: string | null;
   createdBy?: string | null;
 }): CreditLedgerEntry {
-  const id = createId('crd');
-  stmtManualCreditAdjustment.run(
-    id,
-    input.userId,
-    input.delta,
-    input.note ?? null,
-    input.createdBy ?? 'admin',
-  );
-  const row = agentDb
-    .prepare('SELECT * FROM credit_ledger WHERE id = ?')
-    .get(id) as CreditLedgerRow;
-  return mapLedger(row);
+  return agentDb.transaction(() => {
+    if (input.delta < 0 && !consumeCreditGrants(input.userId, Math.abs(input.delta))) {
+      throw new Error('Insufficient active credits.');
+    }
+
+    const id = createId('crd');
+    stmtManualCreditAdjustment.run(
+      id,
+      input.userId,
+      input.delta,
+      input.note ?? null,
+      input.createdBy ?? 'admin',
+    );
+    if (input.delta > 0) {
+      stmtInsertCreditGrant.run(
+        createId('grt'),
+        input.userId,
+        null,
+        id,
+        input.delta,
+        input.delta,
+        null,
+      );
+    }
+    const row = agentDb
+      .prepare('SELECT * FROM credit_ledger WHERE id = ?')
+      .get(id) as CreditLedgerRow;
+    return mapLedger(row);
+  })();
 }
 
 export function listAdminBillingOrders(input: {

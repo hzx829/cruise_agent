@@ -45,6 +45,7 @@ interface CreditLedgerEntry {
   delta: number;
   reason: string;
   note: string | null;
+  expiresAt: string | null;
   createdAt: string;
 }
 
@@ -69,18 +70,18 @@ const PLAN_META: Record<
   monthly_lite: {
     tag: '轻用',
     audience: '偶尔查价',
-    features: ['600 点额度', '约 50 次私有库报价', '用完可续买'],
+    features: ['600 点月度额度', '约 50 次私有库报价', '有效期 1 个月'],
   },
   monthly_standard: {
     tag: '推荐',
     audience: '持续跟进',
     highlighted: true,
-    features: ['3000 点额度', '约 250 次私有库报价', '适合持续比价'],
+    features: ['3000 点月度额度', '约 250 次私有库报价', '适合持续比价'],
   },
   monthly_pro: {
     tag: '高频',
     audience: '批量选品',
-    features: ['8000 点额度', '约 660 次私有库报价', '最低单点成本'],
+    features: ['8000 点月度额度', '约 660 次私有库报价', '最低单点成本'],
   },
 };
 
@@ -211,7 +212,7 @@ export function BillingDashboard() {
               额度与套餐
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              额度包、订单和扣费流水
+              月度额度包、订单和扣费流水
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -260,11 +261,11 @@ export function BillingDashboard() {
 
             <section className="rounded-lg border bg-background p-4">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-sm text-muted-foreground">额度包区间</p>
+                <p className="text-sm text-muted-foreground">月包额度</p>
                 <CalendarDays className="size-4 text-emerald-600" />
               </div>
               <p className="mt-3 text-2xl font-semibold">{quotaRange}</p>
-              <p className="mt-1 text-sm text-muted-foreground">点/包</p>
+              <p className="mt-1 text-sm text-muted-foreground">点/月</p>
             </section>
 
             <section className="rounded-lg border bg-background p-4">
@@ -284,7 +285,7 @@ export function BillingDashboard() {
           <section className="space-y-3">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <h2 className="text-base font-semibold">额度包</h2>
+                <h2 className="text-base font-semibold">月度套餐</h2>
                 <p className="text-sm text-muted-foreground">
                   私有库报价约 12 点；含一次网络搜索约 17 点
                 </p>
@@ -309,9 +310,9 @@ export function BillingDashboard() {
               <div className="grid gap-3 lg:grid-cols-3">
                 {(data?.plans ?? []).map((plan) => {
                   const meta = PLAN_META[plan.id] ?? {
-                    tag: '额度包',
+                    tag: '月包',
                     audience: '按需使用',
-                    features: [`${formatQuota(plan.quotaMessages)} 点额度`],
+                    features: [`${formatQuota(plan.quotaMessages)} 点月度额度`],
                   };
                   const creating = creatingPlanId === plan.id;
                   return (
@@ -351,7 +352,7 @@ export function BillingDashboard() {
                           <span className="text-3xl font-semibold">
                             {formatMoney(plan.amountCents)}
                           </span>
-                          <span className="pb-1 text-sm text-muted-foreground">/包</span>
+                          <span className="pb-1 text-sm text-muted-foreground">/月</span>
                         </div>
                         <p className="mt-1 text-sm text-muted-foreground">
                           {formatQuota(plan.quotaMessages)} 点，{formatUnitPrice(plan)}
@@ -388,7 +389,7 @@ export function BillingDashboard() {
                         ) : (
                           <CreditCard className="size-4" />
                         )}
-                        {creating ? '创建订单' : data?.alipayConfigured ? '购买额度包' : '暂不可购买'}
+                        {creating ? '创建订单' : data?.alipayConfigured ? '购买月包' : '暂不可购买'}
                       </button>
                     </article>
                   );
@@ -463,7 +464,7 @@ export function BillingDashboard() {
               </div>
               <div className="flex gap-3">
                 <CalendarDays className="mt-0.5 size-4 shrink-0 text-emerald-600" />
-                <p>购买后按点发放，当前版本不自动续费。</p>
+                <p>月包额度有效期 1 个月，当前版本不自动续费。</p>
               </div>
               <div className="flex gap-3">
                 <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" />
@@ -500,6 +501,11 @@ export function BillingDashboard() {
                     <p className="mt-1 text-sm text-muted-foreground">
                       {entry.note || entry.reason}
                     </p>
+                    {entry.expiresAt && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        有效至 {formatTime(entry.expiresAt)}
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>

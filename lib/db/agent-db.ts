@@ -142,9 +142,9 @@ agentDb.exec(`
   INSERT INTO billing_plans
     (id, name, description, amount_cents, currency, quota_messages, active, sort_order)
   VALUES
-    ('monthly_lite', '轻量额度包', '600 点，约 50 次私有库报价', 2900, 'CNY', 600, 1, 10),
-    ('monthly_standard', '标准额度包', '3000 点，约 250 次私有库报价', 8900, 'CNY', 3000, 1, 20),
-    ('monthly_pro', '专业额度包', '8000 点，约 660 次私有库报价', 19900, 'CNY', 8000, 1, 30)
+    ('monthly_lite', '轻量月包', '600 点/月，约 50 次私有库报价', 2900, 'CNY', 600, 1, 10),
+    ('monthly_standard', '标准月包', '3000 点/月，约 250 次私有库报价', 8900, 'CNY', 3000, 1, 20),
+    ('monthly_pro', '专业月包', '8000 点/月，约 660 次私有库报价', 19900, 'CNY', 8000, 1, 30)
   ON CONFLICT(id) DO UPDATE SET
     name = excluded.name,
     description = excluded.description,
@@ -210,6 +210,7 @@ agentDb.exec(`
     reason TEXT NOT NULL,
     note TEXT,
     created_by TEXT,
+    expires_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (order_id) REFERENCES billing_orders(id) ON DELETE SET NULL,
@@ -224,6 +225,24 @@ agentDb.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_ledger_run_chat
     ON credit_ledger(run_id, reason)
     WHERE run_id IS NOT NULL AND reason = 'chat';
+
+  CREATE TABLE IF NOT EXISTS credit_grants (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    order_id TEXT UNIQUE,
+    ledger_id TEXT,
+    total INTEGER NOT NULL,
+    remaining INTEGER NOT NULL,
+    expires_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (order_id) REFERENCES billing_orders(id) ON DELETE SET NULL,
+    FOREIGN KEY (ledger_id) REFERENCES credit_ledger(id) ON DELETE SET NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_credit_grants_user_active
+    ON credit_grants(user_id, expires_at, remaining);
 
   CREATE TABLE IF NOT EXISTS notification_config (
     key TEXT PRIMARY KEY,
@@ -354,6 +373,7 @@ function ensureColumn(
     | 'users'
     | 'chats'
     | 'notifications'
+    | 'credit_ledger'
     | 'agent_runs'
     | 'agent_steps'
     | 'agent_step_timings',
@@ -381,6 +401,7 @@ ensureColumn(
   'owner_user_id',
   'TEXT REFERENCES users(id) ON DELETE CASCADE',
 );
+ensureColumn('credit_ledger', 'expires_at', 'TEXT');
 ensureColumn('agent_runs', 'user_id', 'TEXT REFERENCES users(id) ON DELETE SET NULL');
 ensureColumn('agent_runs', 'prompt_version', 'INTEGER');
 ensureColumn('agent_runs', 'prompt_hash', 'TEXT');
@@ -467,6 +488,22 @@ agentDb.exec(`
   CREATE INDEX IF NOT EXISTS idx_agent_steps_tool_call_id ON agent_steps(tool_call_id);
   CREATE INDEX IF NOT EXISTS idx_agent_step_timings_run_id
     ON agent_step_timings(run_id);
+
+  INSERT OR IGNORE INTO credit_grants (
+    id, user_id, order_id, ledger_id, total, remaining, expires_at, created_at
+  )
+  SELECT
+    'grt_' || id,
+    user_id,
+    order_id,
+    id,
+    delta,
+    delta,
+    expires_at,
+    created_at
+  FROM credit_ledger
+  WHERE delta > 0
+    AND reason IN ('purchase', 'manual');
 `);
 
 export default agentDb;

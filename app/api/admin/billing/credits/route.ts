@@ -30,15 +30,22 @@ export async function POST(req: Request) {
     );
   }
 
-  const entry = adjustUserCredits({
-    userId,
-    delta,
-    note,
-    createdBy: 'admin',
-  });
+  try {
+    const entry = adjustUserCredits({
+      userId,
+      delta,
+      note,
+      createdBy: 'admin',
+    });
 
-  return NextResponse.json({
-    entry,
-    balance: getCreditBalance(userId),
-  });
+    return NextResponse.json({
+      entry,
+      balance: getCreditBalance(userId),
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Adjustment failed.' },
+      { status: 400 },
+    );
+  }
 }

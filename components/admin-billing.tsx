@@ -54,6 +54,7 @@ interface CreditLedgerEntry {
   reason: string;
   note: string | null;
   createdBy: string | null;
+  expiresAt: string | null;
   createdAt: string;
 }
 
@@ -457,6 +458,11 @@ export function AdminBilling() {
                   <p className="mt-1 text-sm text-muted-foreground">
                     {entry.note || entry.reason}
                   </p>
+                  {entry.expiresAt && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      expires {formatTime(entry.expiresAt)}
+                    </p>
+                  )}
                 </div>
               ))
             )}
