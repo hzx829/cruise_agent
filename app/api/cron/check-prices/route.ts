@@ -12,9 +12,14 @@ import {
  * 需要 Authorization: Bearer <CRON_SECRET> 验证。
  */
 export async function POST(req: Request) {
-  // 验证 cron secret
   const authHeader = req.headers.get('authorization');
   const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret && process.env.NODE_ENV === 'production') {
+    return NextResponse.json(
+      { error: 'CRON_SECRET is not configured.' },
+      { status: 503 },
+    );
+  }
   if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }

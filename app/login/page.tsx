@@ -35,7 +35,9 @@ export default async function LoginPage({
 
   const error = getParam(params.error);
   const wechatConfigured = isWeChatConfigured();
-  const devLoginEnabled = process.env.AUTH_DEV_WECHAT_LOGIN === 'true';
+  const devLoginEnabled =
+    process.env.NODE_ENV !== 'production' &&
+    process.env.AUTH_DEV_WECHAT_LOGIN === 'true';
   const wechatStartUrl = `/api/auth/wechat/start?next=${encodeURIComponent(nextPath)}`;
 
   return (

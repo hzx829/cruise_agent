@@ -294,6 +294,16 @@ const stmtFulfillOrder = agentDb.prepare(`
   WHERE id = ?
 `);
 
+const stmtMarkOrderClosed = agentDb.prepare(`
+  UPDATE billing_orders
+  SET status = 'closed',
+      trade_status = COALESCE(?, trade_status),
+      closed_at = COALESCE(closed_at, datetime('now')),
+      updated_at = datetime('now')
+  WHERE id = ?
+    AND status IN ('created', 'paying', 'closed')
+`);
+
 const stmtInsertPurchaseCredit = agentDb.prepare(`
   INSERT OR IGNORE INTO credit_ledger (
     id, user_id, order_id, delta, reason, note, created_by
@@ -327,7 +337,12 @@ const stmtChargeChatCredit = agentDb.prepare(`
   INSERT OR IGNORE INTO credit_ledger (
     id, user_id, run_id, delta, reason, note, created_by
   )
-  VALUES (?, ?, ?, ?, 'chat', ?, 'system')
+  SELECT ?, ?, ?, ?, 'chat', ?, 'system'
+  WHERE (
+    SELECT COALESCE(SUM(delta), 0)
+    FROM credit_ledger
+    WHERE user_id = ?
+  ) >= ?
 `);
 
 const stmtManualCreditAdjustment = agentDb.prepare(`
@@ -523,6 +538,14 @@ export function fulfillPaidBillingOrder(input: {
   })();
 }
 
+export function markBillingOrderClosed(input: {
+  orderId: string;
+  tradeStatus?: string | null;
+}): BillingOrder | null {
+  stmtMarkOrderClosed.run(input.tradeStatus ?? 'TRADE_CLOSED', input.orderId);
+  return getBillingOrderById(input.orderId);
+}
+
 export function getCreditBalance(userId: string): number {
   const row = stmtCreditBalance.get(userId) as { balance: number } | undefined;
   return row?.balance ?? 0;
@@ -551,14 +574,18 @@ export function chargeChatCredit(input: {
   runId: string;
   points?: number;
   note?: string | null;
-}): void {
-  stmtChargeChatCredit.run(
+}): boolean {
+  const points = Math.max(Math.trunc(input.points ?? 1), 1);
+  const result = stmtChargeChatCredit.run(
     createId('crd'),
     input.userId,
     input.runId,
-    -Math.max(Math.trunc(input.points ?? 1), 1),
+    -points,
     input.note ?? 'AI 对话',
+    input.userId,
+    points,
   );
+  return result.changes > 0;
 }
 
 export function adjustUserCredits(input: {

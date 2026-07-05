@@ -37,6 +37,12 @@ export async function GET(req: Request) {
   if (order.status === 'fulfilled') {
     return NextResponse.redirect(new URL(`/billing/return?orderId=${order.id}`, req.url));
   }
+  if (order.status !== 'created' && order.status !== 'paying') {
+    return NextResponse.json(
+      { error: 'Order is no longer payable.' },
+      { status: 409 },
+    );
+  }
 
   const payingOrder = markBillingOrderPaying(order.id, user.id) ?? order;
   const html = createAlipayPagePayHtml(payingOrder);

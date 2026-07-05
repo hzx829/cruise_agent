@@ -619,12 +619,20 @@ export async function POST(req: Request) {
             completionTokens: usageTokens.completionTokens,
             webSearchCredits,
           });
-          chargeChatCredit({
+          const charged = chargeChatCredit({
             userId: user.id,
             runId,
             points: chargedPoints,
             note: `${chargedPoints} 点 · ${latestUserText.slice(0, 100)}`,
           });
+          if (!charged) {
+            console.warn('[billing] skipped chat credit charge', {
+              runId,
+              userId: user.id,
+              chargedPoints,
+              reason: 'insufficient_balance_or_duplicate_run',
+            });
+          }
         }
       } catch (persistError) {
         console.error('[agent-trace] failed to persist run finish', persistError);

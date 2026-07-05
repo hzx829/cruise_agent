@@ -9,6 +9,7 @@ import {
 import {
   fulfillPaidBillingOrder,
   getBillingOrderByOutTradeNo,
+  markBillingOrderClosed,
   recordPaymentEvent,
 } from '@/lib/db/billing-store';
 
@@ -84,6 +85,10 @@ export async function POST(req: Request) {
   }
 
   const tradeStatus = payload.trade_status;
+  if (tradeStatus === 'TRADE_CLOSED') {
+    markBillingOrderClosed({ orderId: order.id, tradeStatus });
+    return text('success');
+  }
   if (!tradeStatus || !SUCCESS_TRADE_STATUSES.has(tradeStatus)) {
     return text('success');
   }

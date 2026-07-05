@@ -1,6 +1,7 @@
 import { AlipaySdk } from 'alipay-sdk';
-import type { AlipaySdkCommonResult } from 'alipay-sdk';
+import type { AlipaySdkCommonResult, AlipaySdkConfig } from 'alipay-sdk';
 import type { BillingOrder } from '@/lib/db/billing-store';
+import { getBillingOrderTimeoutMinutes } from '@/lib/billing/config';
 
 export interface AlipayNotifyPayload {
   [key: string]: string;
@@ -19,16 +20,32 @@ export interface AlipayTradeQueryResult extends AlipaySdkCommonResult {
   sendPayDate?: string;
 }
 
-interface AlipayConfig {
+interface AlipayBaseConfig {
   appId: string;
   privateKey: string;
-  alipayPublicKey: string;
   gateway: string;
   notifyUrl: string;
   returnUrl: string;
   sellerId: string | null;
   keyType: 'PKCS1' | 'PKCS8';
 }
+
+interface AlipayPublicKeyConfig extends AlipayBaseConfig {
+  mode: 'public-key';
+  alipayPublicKey: string;
+}
+
+interface AlipayCertConfig extends AlipayBaseConfig {
+  mode: 'cert';
+  appCertPath?: string;
+  appCertContent?: string;
+  alipayPublicCertPath?: string;
+  alipayPublicCertContent?: string;
+  alipayRootCertPath?: string;
+  alipayRootCertContent?: string;
+}
+
+type AlipayConfig = AlipayPublicKeyConfig | AlipayCertConfig;
 
 let sdkSingleton: AlipaySdk | null = null;
 
@@ -38,7 +55,33 @@ function readEnv(name: string): string | undefined {
 }
 
 function normalizePem(value: string): string {
-  return value.replace(/\\n/g, '\n');
+  return value.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n');
+}
+
+function parseBoolean(value: string | undefined): boolean | undefined {
+  if (!value) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off', 'disabled'].includes(normalized)) return false;
+  return undefined;
+}
+
+function readFirstEnv(...names: string[]): string | undefined {
+  for (const name of names) {
+    const value = readEnv(name);
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function readCertSource(contentNames: string[], pathNames: string[]) {
+  const content = readFirstEnv(...contentNames);
+  const path = readFirstEnv(...pathNames);
+  return {
+    content: content ? normalizePem(content) : undefined,
+    path,
+    configured: Boolean(content || path),
+  };
 }
 
 function getConfig(): AlipayConfig {
@@ -49,31 +92,79 @@ function getConfig(): AlipayConfig {
   const notifyUrl = readEnv('ALIPAY_NOTIFY_URL');
   const returnUrl = readEnv('ALIPAY_RETURN_URL');
 
-  if (!appId || !privateKey || !alipayPublicKey || !notifyUrl || !returnUrl) {
+  if (!appId || !privateKey || !notifyUrl || !returnUrl) {
     throw new Error('Alipay is not fully configured.');
   }
 
   const rawKeyType = readEnv('ALIPAY_KEY_TYPE')?.toUpperCase();
-  return {
+  const baseConfig: AlipayBaseConfig = {
     appId,
     privateKey: normalizePem(privateKey),
-    alipayPublicKey: normalizePem(alipayPublicKey),
     gateway: readEnv('ALIPAY_GATEWAY') || 'https://openapi.alipay.com/gateway.do',
     notifyUrl,
     returnUrl,
     sellerId: readEnv('ALIPAY_SELLER_ID') ?? null,
     keyType: rawKeyType === 'PKCS8' ? 'PKCS8' : 'PKCS1',
   };
+
+  const appCert = readCertSource(
+    ['ALIPAY_APP_CERT_CONTENT'],
+    ['ALIPAY_APP_CERT_PATH'],
+  );
+  const alipayPublicCert = readCertSource(
+    ['ALIPAY_ALIPAY_PUBLIC_CERT_CONTENT', 'ALIPAY_PUBLIC_CERT_CONTENT'],
+    ['ALIPAY_ALIPAY_PUBLIC_CERT_PATH', 'ALIPAY_PUBLIC_CERT_PATH'],
+  );
+  const alipayRootCert = readCertSource(
+    ['ALIPAY_ALIPAY_ROOT_CERT_CONTENT', 'ALIPAY_ROOT_CERT_CONTENT'],
+    ['ALIPAY_ALIPAY_ROOT_CERT_PATH', 'ALIPAY_ROOT_CERT_PATH'],
+  );
+  const hasAnyCertConfig =
+    appCert.configured ||
+    alipayPublicCert.configured ||
+    alipayRootCert.configured;
+  const useCertMode =
+    parseBoolean(readEnv('ALIPAY_CERT_MODE')) ?? hasAnyCertConfig;
+
+  if (useCertMode) {
+    if (
+      !appCert.configured ||
+      !alipayPublicCert.configured ||
+      !alipayRootCert.configured
+    ) {
+      throw new Error('Alipay cert mode is not fully configured.');
+    }
+
+    return {
+      ...baseConfig,
+      mode: 'cert',
+      appCertPath: appCert.path,
+      appCertContent: appCert.content,
+      alipayPublicCertPath: alipayPublicCert.path,
+      alipayPublicCertContent: alipayPublicCert.content,
+      alipayRootCertPath: alipayRootCert.path,
+      alipayRootCertContent: alipayRootCert.content,
+    };
+  }
+
+  if (!alipayPublicKey) {
+    throw new Error('Alipay public key is not configured.');
+  }
+
+  return {
+    ...baseConfig,
+    mode: 'public-key',
+    alipayPublicKey: normalizePem(alipayPublicKey),
+  };
 }
 
 export function isAlipayConfigured(): boolean {
-  return Boolean(
-    readEnv('ALIPAY_APP_ID') &&
-      readEnv('ALIPAY_PRIVATE_KEY') &&
-      (readEnv('ALIPAY_ALIPAY_PUBLIC_KEY') || readEnv('ALIPAY_PUBLIC_KEY')) &&
-      readEnv('ALIPAY_NOTIFY_URL') &&
-      readEnv('ALIPAY_RETURN_URL'),
-  );
+  try {
+    getConfig();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function getAlipayAppId(): string | null {
@@ -87,15 +178,29 @@ export function getAlipaySellerId(): string | null {
 function getSdk(): AlipaySdk {
   if (sdkSingleton) return sdkSingleton;
   const config = getConfig();
-  sdkSingleton = new AlipaySdk({
+  const sdkConfig: AlipaySdkConfig = {
     appId: config.appId,
     privateKey: config.privateKey,
-    alipayPublicKey: config.alipayPublicKey,
     gateway: config.gateway,
     keyType: config.keyType,
     signType: 'RSA2',
     timeout: 8000,
-  });
+  };
+
+  if (config.mode === 'cert') {
+    Object.assign(sdkConfig, {
+      appCertPath: config.appCertPath,
+      appCertContent: config.appCertContent,
+      alipayPublicCertPath: config.alipayPublicCertPath,
+      alipayPublicCertContent: config.alipayPublicCertContent,
+      alipayRootCertPath: config.alipayRootCertPath,
+      alipayRootCertContent: config.alipayRootCertContent,
+    });
+  } else {
+    sdkConfig.alipayPublicKey = config.alipayPublicKey;
+  }
+
+  sdkSingleton = new AlipaySdk(sdkConfig);
   return sdkSingleton;
 }
 
@@ -133,6 +238,7 @@ export function createAlipayPagePayHtml(order: BillingOrder): string {
       total_amount: formatCnyAmount(order.amountCents),
       subject: order.subject,
       body: `${order.quotaMessages} 点 AI 邮轮助手额度`,
+      timeout_express: `${getBillingOrderTimeoutMinutes()}m`,
     },
   });
 }

@@ -45,7 +45,10 @@ function getPublicOrigin(req: Request): string {
 }
 
 export async function GET(req: Request) {
-  if (process.env.AUTH_DEV_WECHAT_LOGIN !== 'true') {
+  if (
+    process.env.NODE_ENV === 'production' ||
+    process.env.AUTH_DEV_WECHAT_LOGIN !== 'true'
+  ) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 

@@ -142,9 +142,9 @@ agentDb.exec(`
   INSERT INTO billing_plans
     (id, name, description, amount_cents, currency, quota_messages, active, sort_order)
   VALUES
-    ('monthly_lite', '轻量月包', '600 点/月，约 50 次私有库报价', 2900, 'CNY', 600, 1, 10),
-    ('monthly_standard', '标准月包', '3000 点/月，约 250 次私有库报价', 8900, 'CNY', 3000, 1, 20),
-    ('monthly_pro', '专业月包', '8000 点/月，约 660 次私有库报价', 19900, 'CNY', 8000, 1, 30)
+    ('monthly_lite', '轻量额度包', '600 点，约 50 次私有库报价', 2900, 'CNY', 600, 1, 10),
+    ('monthly_standard', '标准额度包', '3000 点，约 250 次私有库报价', 8900, 'CNY', 3000, 1, 20),
+    ('monthly_pro', '专业额度包', '8000 点，约 660 次私有库报价', 19900, 'CNY', 8000, 1, 30)
   ON CONFLICT(id) DO UPDATE SET
     name = excluded.name,
     description = excluded.description,
