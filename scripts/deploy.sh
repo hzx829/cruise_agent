@@ -199,6 +199,11 @@ mkdir -p "\${BUILD_DIR}" "\${REMOTE_APP_DIR}"
 
 tar -xf "\${REMOTE_ARCHIVE}" -C "\${BUILD_DIR}"
 mv "\${REMOTE_ENV}" "\${BUILD_DIR}/.env.local"
+if grep -q '^AUTH_DEV_WECHAT_LOGIN=' "\${BUILD_DIR}/.env.local"; then
+    sed -i 's/^AUTH_DEV_WECHAT_LOGIN=.*/AUTH_DEV_WECHAT_LOGIN=false/' "\${BUILD_DIR}/.env.local"
+else
+    echo 'AUTH_DEV_WECHAT_LOGIN=false' >> "\${BUILD_DIR}/.env.local"
+fi
 grep -q '^DB_PATH=' "\${BUILD_DIR}/.env.local" || \
     echo "DB_PATH=\${REMOTE_DATA_DIR}/cruise_deals.db" >> "\${BUILD_DIR}/.env.local"
 grep -q '^AGENT_DB_PATH=' "\${BUILD_DIR}/.env.local" || \
@@ -216,6 +221,7 @@ tar -C "\${BUILD_DIR}" -cf - . | tar -C "\${REMOTE_APP_DIR}" -xf -
 cd /
 rm -rf "\${BUILD_DIR}" "\${REMOTE_ARCHIVE}"
 
+export NODE_ENV=production
 APP_IDS=\$(pm2 jlist | node -e "let s=''; process.stdin.on('data', d => s += d); process.stdin.on('end', () => { const name = process.argv[1]; const ids = JSON.parse(s).filter(p => p.name === name).map(p => p.pm_id); console.log(ids.join(' ')); });" "\${PM2_APP_NAME}")
 read -r PRIMARY_ID EXTRA_IDS <<< "\${APP_IDS}"
 

@@ -1,10 +1,11 @@
 import Link from 'next/link';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import {
   getAuthenticatedCookieStoreUser,
   sanitizeNextPath,
 } from '@/lib/auth/session';
+import { isDevWeChatLoginAllowed } from '@/lib/auth/dev-login';
 import { isWeChatConfigured } from '@/lib/auth/wechat';
 import { WeChatQrLogin } from '@/components/wechat-qr-login';
 
@@ -35,9 +36,7 @@ export default async function LoginPage({
 
   const error = getParam(params.error);
   const wechatConfigured = isWeChatConfigured();
-  const devLoginEnabled =
-    process.env.NODE_ENV !== 'production' &&
-    process.env.AUTH_DEV_WECHAT_LOGIN === 'true';
+  const devLoginEnabled = isDevWeChatLoginAllowed(await headers());
   const wechatStartUrl = `/api/auth/wechat/start?next=${encodeURIComponent(nextPath)}`;
 
   return (

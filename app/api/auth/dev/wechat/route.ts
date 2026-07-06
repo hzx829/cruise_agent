@@ -6,6 +6,7 @@ import {
   migrateAnonymousUserToUser,
   sanitizeNextPath,
 } from '@/lib/auth/session';
+import { isDevWeChatLoginAllowed } from '@/lib/auth/dev-login';
 import {
   createDevWeChatProfile,
   upsertWeChatUser,
@@ -45,10 +46,7 @@ function getPublicOrigin(req: Request): string {
 }
 
 export async function GET(req: Request) {
-  if (
-    process.env.NODE_ENV === 'production' ||
-    process.env.AUTH_DEV_WECHAT_LOGIN !== 'true'
-  ) {
+  if (!isDevWeChatLoginAllowed(req.headers)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
